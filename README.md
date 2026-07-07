@@ -9,12 +9,31 @@ at a pinned tag — the source library remains the single source of truth.
 
 ## What you get
 
-- **31 skills** — invoke them as slash commands (e.g. `/spec-write`, `/code-review`,
-  `/security-review`, `/repo-digest`, the `mod-*` modernization workbench, the SDET
-  scaffolders). Skill-first primitives run entirely in-session; Python-load-bearing (PLB)
-  primitives delegate to the bundled `forge-validate` engine.
+- **31 skills** — Claude Code **skills** (spec-write, code-review, security-review,
+  repo-digest, the `mod-*` modernization workbench, the SDET scaffolders). Claude
+  **auto-invokes** a skill when your request matches its purpose — you don't type a
+  slash command. Skill-first primitives run entirely in-session; Python-load-bearing
+  (PLB) primitives delegate to the bundled `forge-validate` engine.
 - **A self-contained engine** — no `uv` runtime dependency. The plugin bundles the
   deterministic Python engine and builds a one-time virtualenv on first use.
+
+## Using the skills
+
+These primitives are Claude Code **skills**, not typed slash commands. There is no
+`commands/` directory, so `/code-review` typed at the prompt does **not** invoke
+anything. Instead, Claude reads each skill's `description` and **activates the skill
+automatically** when your request matches its purpose:
+
+- Ask *"review my code for bugs"* and Claude engages the **code-review** skill.
+- Ask *"generate a repo digest for this codebase"* and it engages **repo-digest**.
+- You can also **name a skill explicitly** — e.g. *"use the security-review skill on
+  this diff"* — to steer Claude toward it.
+
+> **A note on `/name` references inside skill docs.** The vendored `SKILL.md` bodies
+> and references still use `/code-review`, `/spec-write`, `/mod-db-schema-analyze`,
+> etc. These are the source library's naming convention for a primitive's **identity**
+> (its slug), not a promise that a typed slash command exists. In Claude Code these
+> skills activate by description-matching, as described above.
 
 ## Install
 
@@ -60,9 +79,15 @@ runtime dependency.
   Install Python 3.11+ (e.g. via your OS package manager, `pyenv`, or python.org), then
   re-run the bootstrap command above. Skill-first primitives keep working without it.
 
+- **First activation needs network access.** The bootstrap runs `pip install -e engine`,
+  which downloads the engine's Python dependencies (pydantic, sqlglot, jinja2, etc.)
+  from PyPI on first run. On an **offline machine** this step fails — pre-build the venv
+  on a networked machine (or vendor a wheelhouse and point `pip` at it) before using the
+  PLB primitives. Skill-first primitives need no venv and work offline immediately.
+
 - **Where run artifacts land.** PLB primitives write their output under
-  `.forge-foundry/context/` in **your working project** (not the shared plugin cache),
-  so artifacts are scoped to the repo you invoke them from.
+  `.foundry/context/` in **your working project** (the paths are CWD-relative), so
+  artifacts are scoped to the repo you invoke them from, not the shared plugin cache.
 
 - **Re-vendoring (maintainers).** To refresh the vendored trees from a new source tag:
 
@@ -79,8 +104,8 @@ runtime dependency.
   logged in [`CHANGELOG-VENDOR.md`](CHANGELOG-VENDOR.md).
 - **31 primitives** ship as skills, backed by the bundled deterministic Python engine.
 - **Parity-tested** — the `tests/` suite verifies the vendored skills, engine, and
-  manifests match the source (skill count, PLB rewrites, state-dir localization, version
-  agreement, and a headless PLB smoke run).
+  manifests match the source (skill count, PLB rewrites, state-dir preservation on
+  `.foundry/context`, version agreement, and a headless PLB smoke run).
 
 ## Re-vendoring from the source library
 
