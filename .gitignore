@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
 engine/.venv/
+*.egg-info/
 .forge-foundry/
 .pytest_cache/

@@ -62,13 +62,21 @@ def copy_engine(src_repo: Path, prims: list[PrimitiveSrc], out_engine: Path,
     out_engine = Path(out_engine)
     # forge_validate
     _copy_tree_no_symlinks(src_repo / "forge_validate", out_engine / "forge_validate")
-    # primitives package root + _shared
+    # primitives package root + all shared underscore-prefixed modules/packages
+    # (_shared, _sdet, _renderer_registry.py, _response_schema_validator.py,
+    #  _tool_version.py, _xml_safety.py, …) — cross-primitive engine deps.
     (out_engine / "primitives").mkdir(parents=True, exist_ok=True)
     src_prim_init = src_repo / "primitives" / "__init__.py"
     (out_engine / "primitives" / "__init__.py").write_text(
         src_prim_init.read_text() if src_prim_init.is_file() else "")
-    _copy_tree_no_symlinks(src_repo / "primitives" / "_shared",
-                           out_engine / "primitives" / "_shared")
+    for shared in sorted((src_repo / "primitives").glob("_*")):
+        if shared.name == "__pycache__" or shared.is_symlink():
+            continue
+        dest = out_engine / "primitives" / shared.name
+        if shared.is_dir():
+            _copy_tree_no_symlinks(shared, dest)
+        else:
+            shutil.copy2(shared, dest)
     # each primitive's shared/ (hybrid + PLB)
     for p in prims:
         if not p.has_shared:
@@ -78,7 +86,9 @@ def copy_engine(src_repo: Path, prims: list[PrimitiveSrc], out_engine: Path,
         pkg_init = out_engine / "primitives" / p.name / "__init__.py"
         if not pkg_init.exists():
             pkg_init.parent.mkdir(parents=True, exist_ok=True)
-            pkg_init.write_text("")
+            src_pkg_init = src_repo / "primitives" / p.name / "__init__.py"
+            pkg_init.write_text(
+                src_pkg_init.read_text() if src_pkg_init.is_file() else "")
     # generated pyproject
     deps = _pinned_deps(src_repo)
     deps_block = "\n".join(f'    "{d}",' for d in deps)
