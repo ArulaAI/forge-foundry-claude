@@ -1,0 +1,66 @@
+# R1 /rules-gen catalog — AWS Well-Architected for IaC.
+#
+# Path-scoped to Terraform (.tf), CloudFormation (.yaml), and CDK
+# (cdk/**/*.ts) files. Maps the six Well-Architected pillars
+# (Operational Excellence, Security, Reliability, Performance Efficiency,
+# Cost Optimization, Sustainability) onto concrete IaC patterns. Each
+# section names the AWS services + Terraform / CDK constructs the rule
+# applies to, so the rule is actionable at the IaC surface rather than
+# abstract guidance.
+name: aws
+description: "AWS Well-Architected 6 pillars: IAM, encryption, networking, reliability, cost"
+version: "1.0.0"
+paths:
+  - "**/*.tf"
+  - "**/*.yaml"
+  - "**/cdk/**/*.ts"
+sections:
+  - heading: "Security pillar: IAM least privilege and identity"
+    rules:
+      - "IAM policies use specific Action / Resource / Condition statements — `\"Action\": \"*\"` and `\"Resource\": \"*\"` together are forbidden outside of break-glass break-emergency roles; CI scans (`aws_iam_policy_document` data source, `cfn-lint`, `cdk-nag`) gate on the pattern."
+      - "Use IAM Roles for service-to-service access, never long-lived IAM users with access keys — `aws_iam_role` for EC2 / ECS / Lambda, `assume_role_policy` constrained by `sts:AssumeRole` + `aws:PrincipalOrgID` condition where multi-account."
+      - "GitHub Actions / GitLab CI authenticate via OIDC trust (`aws_iam_role` + `aws_iam_openid_connect_provider`) with a `token.actions.githubusercontent.com` issuer and a `sub` claim pinned to the org/repo/ref — static AWS_ACCESS_KEY_ID secrets in CI are an anti-pattern."
+      - "IAM Access Analyzer (`aws_accessanalyzer_analyzer`) runs in every account; the `cfn-policy-validator` and `iam-policy-validator-for-terraform` tools shift the same checks left into CI."
+      - "Cross-account access uses resource-based policies (`aws_s3_bucket_policy`, `aws_kms_key_policy`, `aws_sqs_queue_policy`) WITH a corresponding identity-based policy on the assuming role — the union of the two grants access; the intersection is what's effective."
+      - "Service control policies (SCPs) at the AWS Organizations level enforce non-negotiable guardrails (no public S3 buckets, no IMDSv1, no root-key creation) that no member account can override — the IaC repo includes the SCP definitions."
+      - "MFA is required for all human IAM users via condition `aws:MultiFactorAuthPresent` on assume-role policies; the Console-managed users without MFA are a finding for AWS Security Hub."
+
+  - heading: "Security pillar: encryption, secrets, and data at rest / in transit"
+    rules:
+      - "S3 buckets default-encrypt with `aws_s3_bucket_server_side_encryption_configuration` using a customer-managed KMS key (CMK) for regulated data — the AWS-managed `aws/s3` key is acceptable only for non-regulated workloads. Versioning AND MFA-delete on production buckets."
+      - "Block all public access at the account level (`aws_s3_account_public_access_block`) AND on every bucket — defense in depth. Bucket policy with `aws:SecureTransport = true` condition denies non-HTTPS access."
+      - "EBS volumes encrypted by default (`aws_ebs_encryption_by_default`); RDS / Aurora encrypted with `storage_encrypted = true` and `kms_key_id` set; encrypted snapshots are the only kind that exist."
+      - "Secrets live in AWS Secrets Manager or SSM Parameter Store (SecureString) — never `aws_ssm_parameter` with `type = \"String\"` or hardcoded in Terraform variables / CDK constants. CI scans (gitleaks, trufflehog) catch the pattern at PR time."
+      - "KMS keys rotate annually (`enable_key_rotation = true`); CMK aliases (`alias/app-name-purpose`) decouple consumers from the underlying key UUID."
+      - "TLS terminates at ALB / NLB / CloudFront — never on an EC2 instance directly. ACM (`aws_acm_certificate`) for cert provisioning with DNS-01 validation; ACM-PCA for private CAs."
+      - "API Gateway / ALB enforce TLS 1.2 minimum (`security_policy = \"ELBSecurityPolicy-TLS13-1-2-2021-06\"` or stricter); TLS 1.0 / 1.1 listeners are findings."
+
+  - heading: "Reliability pillar: networking, Multi-AZ, and failure domains"
+    rules:
+      - "VPCs span at least 3 Availability Zones for production workloads — 2 AZs is the dev / pre-prod cap; single-AZ is forbidden for any service in the disaster-recovery scope."
+      - "Security groups are deny-by-default with explicit allow rules; `aws_security_group_rule` referenced by ID (not inline) so rules are independently auditable. Self-referencing security groups for intra-tier communication, never `0.0.0.0/0` for application traffic."
+      - "Use VPC endpoints (`aws_vpc_endpoint`) for AWS service traffic (S3, DynamoDB Gateway endpoints; Interface endpoints for the rest) — keeps traffic on the AWS backbone and avoids egress NAT-gateway charges."
+      - "RDS / Aurora deploy with `multi_az = true` (production) and automated backups (`backup_retention_period >= 7`); `deletion_protection = true` and `skip_final_snapshot = false` for any non-throwaway database."
+      - "ALB / NLB target groups have health checks tuned to the application (`healthy_threshold`, `unhealthy_threshold`, `interval`, `timeout`); the defaults are too generous for fast failure detection."
+      - "Auto Scaling Groups span all AZs in the VPC's private subnets; `health_check_type = \"ELB\"` (not just \"EC2\") so application-layer failures trigger replacement."
+      - "Route 53 health checks + failover routing for cross-region active-active or active-passive; latency-based or geolocation-based routing for global reads."
+
+  - heading: "Operational Excellence: observability, CloudTrail, and IaC discipline"
+    rules:
+      - "CloudTrail is enabled in every account (`aws_cloudtrail` with `is_multi_region_trail = true`, `enable_log_file_validation = true`); logs land in an S3 bucket in a logging account with SCP-enforced read-only access."
+      - "AWS Config (`aws_config_configuration_recorder` + `aws_config_delivery_channel` + managed rules) records resource state changes; conformance packs deploy a baseline of CIS / PCI / NIST checks."
+      - "Every Lambda / ECS / EC2 ships logs to CloudWatch Logs with a retention policy set explicitly (`retention_in_days`); indefinite log retention (default) is a cost and compliance bug."
+      - "Use X-Ray (or OpenTelemetry with the AWS Distro for OpenTelemetry collector) for distributed tracing; instrument at the Lambda runtime / ECS task / ALB level so traces span the request path end-to-end."
+      - "CloudWatch alarms cover at least: `5XXError` on each ALB/API Gateway, `Errors` and `Throttles` on each Lambda, `CPUUtilization` and `FreeStorageSpace` on each RDS instance; alarms route to PagerDuty / Opsgenie via SNS topic."
+      - "Terraform state is remote (`backend \"s3\"` with `dynamodb_table` for locking) and the state bucket has SSE-KMS + versioning + access logging; `terraform plan` runs in CI on PR, `terraform apply` runs only on merge to main with manual approval."
+      - "CDK apps use `cdk-nag` with the AWS Solutions ruleset (or PCI / HIPAA depending on workload); CI fails on new findings."
+
+  - heading: "Performance Efficiency and Cost Optimization"
+    rules:
+      - "Choose instance / Lambda compute by workload: Graviton (`t4g`, `c7g`, `r7g`, ARM Lambda) for 20-40% cost / perf advantage on most workloads — only stay on x86 for hard architecture constraints."
+      - "Lambda functions use the latest runtime (Python 3.13 / Node 22), `arm64` architecture, `ephemeral_storage = 512` unless higher is justified, and `reserved_concurrent_executions` set for predictable cost ceilings."
+      - "RDS Aurora Serverless v2 (`aws_rds_cluster` with `serverless_v2_scaling_configuration`) for variable workloads — scales in 0.5 ACU increments and avoids over-provisioned provisioned instances."
+      - "S3 storage class transitions (`aws_s3_bucket_lifecycle_configuration`) move objects to S3 Intelligent-Tiering / Glacier Flexible Retrieval / Deep Archive based on access patterns — large datasets without lifecycle rules are a cost bug."
+      - "Reserved Instances / Savings Plans cover 60-80% of steady-state compute; the remainder runs on Spot (interruptible workloads) or on-demand. AWS Cost Anomaly Detection alerts on per-service deltas."
+      - "DynamoDB on-demand billing for unpredictable workloads, provisioned capacity with auto-scaling for steady workloads — the cost crossover is ~ 30% utilization."
+      - "Tag every resource with `cost-center`, `environment`, `team`, `application` for cost-allocation reporting; SCPs enforce tag presence on create. AWS Cost Explorer breaks down by tag for chargeback."

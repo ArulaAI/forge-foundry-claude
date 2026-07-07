@@ -1,0 +1,111 @@
+{# M6 /mod-synth-logs Phase C — metrics renderer body (M6-TEMPLATE-4 / #472).
+
+   Renders the body of ``_render_metrics()``. Enterprise Server / CICS
+   region performance-metric snapshots — periodic gauges + counters +
+   histograms covering CPU, memory, transaction throughput, abend
+   counts, CICS storage headroom, and VSAM I/O throughput (BankDemo
+   reference ``synth-logs-generate.md`` §"LOG FILE 9").
+
+   Output line shape (space-separated, sort_keys=True on the labels
+   blob for deterministic byte equality):
+
+       <timestamp> <metric_name> <metric_kind gauge|counter|histogram> <value> <unit> <labels>
+
+   - ``timestamp``: ISO-8601 UTC, spaced linearly across the spec
+     window. Per BankDemo, metrics are aggregated per-minute (or
+     per-5-minute at higher scale): the renderer divides the window
+     into ``entries_count`` evenly-spaced snapshots so a 72-hour window
+     with 4,320 entries lands one snapshot per minute.
+   - ``metric_name``: drawn from a closed pool of 7 BankDemo-shaped
+     names — ``cpu_pct``, ``mem_pct``, ``tps``, ``txn_avg_ms``,
+     ``abend_total``, ``cics_storage_pct``, ``vsam_io_throughput``.
+     Every snapshot emits one metric (the dispatch loop in
+     ``main()`` calls this once per ``entries_count``); the metric
+     name rotates round-robin so a 7-entry window covers the full
+     surface and a 4,320-entry run covers each metric ~617 times.
+   - ``metric_kind``: deterministic per ``metric_name``:
+     ``cpu_pct`` / ``mem_pct`` / ``cics_storage_pct`` are gauges,
+     ``abend_total`` is a counter, ``txn_avg_ms`` is a histogram,
+     ``tps`` is a gauge, ``vsam_io_throughput`` is a gauge.
+   - ``value``: bucketed range per metric — ``cpu_pct`` 5..95,
+     ``mem_pct`` 30..90, ``cics_storage_pct`` 20..98, ``tps`` 1..400,
+     ``txn_avg_ms`` 5..900, ``abend_total`` is a monotonically-
+     increasing counter (incremented by ``rng.randint(0, 3)`` per
+     snapshot, anchored at 0), ``vsam_io_throughput`` 100..50000
+     ops/sec.
+   - ``unit``: deterministic per ``metric_name`` —
+     ``percent`` / ``count`` / ``tps`` / ``ms`` / ``ops_per_sec``.
+   - ``labels``: a Python-dict literal repr with ``region`` always
+     present plus a metric-specific second key. For ``vsam_io_throughput``
+     the second key is ``file`` and it is drawn from
+     ``entities_digest["files"]`` (anti-hallucination layer 1). For
+     all other metrics the second key is ``region`` only (no per-entity
+     label). ``sort_keys=True`` via ``json.dumps`` keeps byte equality
+     deterministic across CPython releases — we emit the labels as
+     JSON (not Python repr) so the test regex can lock the shape down.
+
+   Anti-hallucination (design spec §"Anti-hallucination" layer 1):
+   the only entity drawn from ``entities_digest`` is the file name on
+   ``vsam_io_throughput`` lines. When the files catalog is empty
+   ``vsam_io_throughput`` snapshots fall back to ``region`` only —
+   the metric still emits, no synthesised free-form file names.
+   ``cpu_pct`` / ``mem_pct`` / ``tps`` / ``txn_avg_ms`` / ``abend_total``
+   / ``cics_storage_pct`` are entity-free by construction (mainframe-
+   region aggregates, not per-entity drill-downs).
+
+   Determinism: only ``rng`` drives every sampling and jitter call,
+   and ``json.dumps(..., sort_keys=True)`` locks label order.
+
+   Day-3 incident slice: ``abend_total`` is monotonically increasing
+   so the consumer can read it as a counter across the 3-day window
+   and spot the Day-3 spike in derivative without per-line incident
+   markers (the spike is a consequence of the planner's incident
+   profile bumping ``entries_count`` for the incident window, not
+   this template's responsibility).
+#}
+import json
+from datetime import datetime, timedelta, timezone
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+files = list(entities_digest.get("files", []))
+
+# Closed metric catalog. Order matters — the rotation walks this tuple
+# round-robin so a 7-entry window covers the full surface exactly once.
+metric_catalog = (
+    ("cpu_pct", "gauge", "percent", 5, 95),
+    ("mem_pct", "gauge", "percent", 30, 90),
+    ("tps", "gauge", "tps", 1, 400),
+    ("txn_avg_ms", "histogram", "ms", 5, 900),
+    ("abend_total", "counter", "count", 0, 3),
+    ("cics_storage_pct", "gauge", "percent", 20, 98),
+    ("vsam_io_throughput", "gauge", "ops_per_sec", 100, 50000),
+)
+
+abend_running_total = 0
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    metric_name, metric_kind, unit, lo, hi = metric_catalog[i % len(metric_catalog)]
+    if metric_name == "abend_total":
+        abend_running_total += rng.randint(lo, hi)
+        value = abend_running_total
+    else:
+        value = rng.randint(lo, hi)
+    if metric_name == "vsam_io_throughput" and files:
+        labels = {"region": "BANKDEMO", "file": rng.choice(files)}
+    else:
+        labels = {"region": "BANKDEMO"}
+    labels_json = json.dumps(labels, sort_keys=True)
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"{metric_name} {metric_kind} {value} {unit} {labels_json}"
+    )
+return "\n".join(lines) + "\n"

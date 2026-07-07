@@ -1,0 +1,63 @@
+# R1 /rules-gen catalog — Java 21+ language and ecosystem.
+#
+# Path-scoped: only loaded for Java sources and Maven / Gradle build
+# files. Targets Java 21 LTS features (records, sealed types, pattern
+# matching, virtual threads) plus the modern Spring Boot 3 / Jakarta EE 10
+# stack, the dominant JVM build tools (Maven, Gradle, Gradle Kotlin DSL),
+# and the canonical lint/format/test toolchain (Spotless, Checkstyle,
+# PMD, Error Prone, SpotBugs, JUnit 5, AssertJ).
+name: java
+description: "Java 21+ language conventions, Spring Boot 3, build, lint, and testing"
+version: "1.0.0"
+paths:
+  - "**/*.java"
+  - "**/pom.xml"
+  - "**/build.gradle"
+  - "**/build.gradle.kts"
+sections:
+  - heading: "Java 21+ language conventions"
+    rules:
+      - "Use records (JEP 395) for immutable data carriers; never write a hand-rolled DTO with manual `equals`/`hashCode`/`toString` when a record fits — records produce canonical implementations that survive future field additions."
+      - "Prefer sealed interfaces + permits clauses (JEP 409) for closed type hierarchies; combined with pattern matching for switch (JEP 441) the compiler enforces exhaustiveness, which a chain of `instanceof` checks cannot."
+      - "Use pattern matching for `instanceof` (JEP 394) and pattern matching for `switch` (JEP 441) instead of cast chains; the binding variable is null-safe and scoped to the matched branch."
+      - "Virtual threads (JEP 444) replace dedicated thread pools for I/O-bound work; use `Executors.newVirtualThreadPerTaskExecutor()` for HTTP handlers, JDBC calls, and synchronous downstream invocations — pin-aware libraries are required (avoid `synchronized` on long-blocking I/O, prefer `ReentrantLock`)."
+      - "Avoid raw types and unchecked warnings; if you must suppress, narrow `@SuppressWarnings(\"unchecked\")` to the smallest expression and document why."
+      - "Use `var` for local variables only when the right-hand side makes the type obvious at the call site (constructor, factory method); never `var` for collection literals where the element type is non-obvious."
+      - "Text blocks (JEP 378) replace multi-line string concatenation; prefer them for SQL, JSON, and HTML literals because the indentation handling is deterministic."
+
+  - heading: "Error handling and Optional"
+    rules:
+      - "Checked exceptions are reserved for recoverable boundary failures; wrap library checked exceptions in domain-specific unchecked exceptions at the boundary so callers don't propagate JDBC / IO signatures up the stack."
+      - "Never swallow exceptions silently — log with context AND rethrow, or convert to a typed domain error; an empty `catch` block fails review."
+      - "`Optional<T>` is a return type for methods that may have no result; do NOT use `Optional` as a field, parameter, or collection element (Effective Java item 55) — `null` is acceptable in those positions if documented."
+      - "Use `Optional.orElseThrow(() -> new DomainException(...))` instead of `.get()`; `.get()` defeats the purpose of `Optional` because it throws a generic `NoSuchElementException`."
+      - "Java 21 `Optional.getOrDefault` and `Stream.toList()` (JEP 461) replace verbose `Optional.orElse(...)` and `collect(toUnmodifiableList())` boilerplate."
+      - "Resource-bearing exceptions use try-with-resources for guaranteed close; manual `finally { close(); }` blocks fail review because they shadow the original exception when `close()` throws (use `Throwable.addSuppressed` semantics from try-with-resources)."
+
+  - heading: "Spring Boot 3 / Jakarta EE 10 conventions"
+    rules:
+      - "Use constructor injection only — never `@Autowired` on fields or setters; constructor injection plays correctly with `final` fields, immutability, and unit tests without Spring context."
+      - "Configuration properties bind to `@ConfigurationProperties` records with `@Validated`; raw `@Value` injection is forbidden for anything more complex than a single primitive."
+      - "Spring Boot 3 uses `jakarta.*` packages (Jakarta EE 10), not `javax.*` — any `javax.servlet`, `javax.persistence`, `javax.validation` import is a migration-bug indicator."
+      - "REST controllers return `ResponseEntity<T>` only when the status or headers vary by branch; otherwise return the body type directly and let MVC infer the status — fewer lines, easier testing."
+      - "Use `@Transactional(readOnly = true)` on query-only service methods; the read-only flag lets Hibernate skip dirty checks and lets routing data sources direct to a replica."
+      - "Avoid `@ComponentScan` widening; configure scan packages explicitly so a new module's beans don't get pulled in by accident."
+
+  - heading: "Build, lint, format, and dependency management"
+    rules:
+      - "Maven projects pin a single `<java.version>21</java.version>` and `maven.compiler.release=21` in the parent POM; multi-module projects inherit, never override."
+      - "Gradle projects use the Gradle Kotlin DSL (`build.gradle.kts`) for new modules; legacy Groovy DSL is grandfathered but new modules use Kotlin DSL for type safety and IDE refactor support."
+      - "Spotless formats Java code with the Palantir or Google Java Format profile; CI runs `mvn spotless:check` / `./gradlew spotlessCheck` as a gate, and devs run `:apply` locally — formatting is never a review topic."
+      - "Checkstyle + PMD + SpotBugs + Error Prone form the standard static-analysis stack; Error Prone catches concurrency and serialization bugs that Checkstyle cannot. CI fails on new HIGH-severity findings."
+      - "Dependencies are managed via a single `dependencyManagement` BOM (Spring Boot Dependencies BOM, or a curated internal BOM); ad-hoc version pinning in a sub-module is a code smell."
+      - "Lockfile dependency resolution: Gradle uses `dependencyLocking` with `gradle.lockfile` committed; Maven uses `versions:lock-snapshots` or the lockfile plugin — supply-chain attacks rely on unlocked transitive dependencies."
+      - "Dependency vulnerability scanning runs every build (OWASP Dependency-Check, Snyk, GitHub Dependabot); CVSS ≥ 7 findings block release."
+
+  - heading: "Testing with JUnit 5 and AssertJ"
+    rules:
+      - "JUnit 5 (Jupiter) is the test runner; JUnit 4 is grandfathered only — new modules use Jupiter for parameterized tests, `@Nested`, and lifecycle annotations."
+      - "AssertJ is the assertion library (chainable, descriptive failures); Hamcrest is grandfathered only — new tests use `assertThat(actual).isEqualTo(expected)` style for readability."
+      - "Mockito 5+ is the mocking library; do NOT mock value types, records, or static methods except via `mockStatic` in a try-with-resources block."
+      - "Integration tests use `@SpringBootTest` only when exercising the full ApplicationContext; for slice tests use `@WebMvcTest`, `@DataJpaTest`, `@JsonTest` — full-context tests are 10x slower."
+      - "Test containers (`Testcontainers`) replace H2 / embedded fakes for database tests; Postgres-specific syntax fails on H2 and ships as a regression — Testcontainers spins a real Postgres in CI."
+      - "Property-based tests via jqwik or quickcheck-style libraries supplement example-based tests for parser / encoder / round-trip code where edge cases are otherwise invisible."

@@ -1,0 +1,56 @@
+# R1 /rules-gen catalog — BFSI authentication and identity.
+#
+# Path-scoped: only loaded for files under auth/, identity/, login/, or
+# oauth/ directories. Layers MFA, session management, JWT validation,
+# OAuth/OIDC patterns, credential rotation, and password hashing rules
+# on top of the always-on bfsi-core baseline.
+name: bfsi-auth
+description: "BFSI authentication, identity, and credential management"
+version: "1.0.0"
+paths:
+  - "**/auth/**"
+  - "**/identity/**"
+  - "**/login/**"
+  - "**/oauth/**"
+sections:
+  - heading: "MFA enforcement"
+    rules:
+      - "MFA is mandatory for all human users accessing cardholder data, PII, or admin functions (PCI DSS 4.0 §8.4.2, §8.5)."
+      - "Phishing-resistant factors (FIDO2 / WebAuthn / Passkeys, hardware tokens, Smart Cards) are required for privileged users; SMS / email OTPs are downgraded factors and must not satisfy the MFA requirement for admin access (NIST SP 800-63B IAL3 guidance)."
+      - "Reauthenticate the MFA step at the start of any session that performs a privileged action — long-lived sessions that elevate via JWT claim alone defeat the control."
+      - "Failed MFA attempts trigger rate-limiting with exponential back-off; ≥ 6 failures in 30 minutes locks the account and emits a high-severity audit event (PCI DSS 4.0 §8.3.4)."
+      - "MFA-bypass codes (recovery codes, backup codes) carry the same audit and rotation requirements as the primary factor; printed recovery codes are a known weak point and must expire after 1 year."
+
+  - heading: "Session management"
+    rules:
+      - "Idle session timeout ≤ 15 minutes for any session that touches cardholder data or admin functions (PCI DSS 4.0 §8.2.8); absolute session lifetime ≤ 12 hours regardless of activity."
+      - "Session identifiers are cryptographically random (≥ 128 bits of entropy) issued only over TLS and never via URL parameter."
+      - "On privilege escalation (sudo, role-elevate, switch-user) the session ID rotates to defeat fixation; the prior ID is invalidated immediately."
+      - "Session storage is server-side (or signed-encrypted JWT with rotation) — never plain client-side storage of user roles or permissions."
+      - "Logout invalidates the session on the server within 1 second; revoked sessions persist on a deny-list checked on every authenticated request until natural expiry."
+
+  - heading: "JWT validation"
+    rules:
+      - "Reject `alg: none` and reject any algorithm not on an explicit allowlist; do not derive the algorithm from the token header alone."
+      - "Validate `iss`, `aud`, `exp`, `nbf`, and `iat` on every JWT; clock skew tolerance ≤ 60 seconds."
+      - "Use asymmetric signing (RS256 / ES256 / EdDSA) for tokens crossing trust boundaries; HS256 is only safe for tokens that never leave the issuing service."
+      - "Token expiry ≤ 15 minutes for access tokens; refresh tokens rotate on every use and are revocable server-side."
+      - "Never trust JWT claims for authorization without re-resolving the user's permissions from the source-of-truth on every request — claims are a hint, not a grant."
+
+  - heading: "OAuth 2.0 / OIDC patterns"
+    rules:
+      - "Public clients (SPAs, mobile apps, CLIs) use Authorization Code with PKCE — never the deprecated Implicit flow (OAuth 2.1 RFC)."
+      - "The `state` parameter is required and validated for CSRF defense; the value is a single-use cryptographically random nonce, not a deterministic hash."
+      - "Redirect URIs are exact-match strings on an explicit allowlist; wildcards or path-prefix matching enables open-redirect attacks."
+      - "Resource Owner Password Credentials (ROPC) grant is forbidden — it requires the client to handle credentials in plain text, which defeats every credential-handling control downstream."
+      - "Token responses are JSON only, never URL fragments; access tokens never appear in URL query strings (browser history + referrer leakage)."
+
+  - heading: "Credential rotation and password storage"
+    rules:
+      - "Service-account credentials (API keys, machine secrets) rotate at least every 90 days for PCI scope, every 180 days otherwise (PCI DSS 4.0 §8.6.3); long-lived static credentials in CI are an anti-pattern — use OIDC trust federation to issue short-lived per-job credentials."
+      - "Rotation is automated and zero-downtime: issue the new credential, deploy it, validate it, then revoke the old credential — never the reverse order."
+      - "Compromised-credential incidents trigger immediate rotation of every credential on the same trust path, not just the leaked one — assume lateral movement; rotation events emit an audit record carrying the old credential's last-use timestamp."
+      - "Use Argon2id (preferred), bcrypt (cost ≥ 12), or scrypt for password hashing — never MD5, SHA-1, SHA-2 family, or PBKDF2 with low iteration counts; each password gets a unique per-user salt (≥ 128 bits) from a CSPRNG, with a global pepper layered via HMAC."
+      - "Rehash on login when the cost factor has been increased so historical hashes don't pin the system to outdated parameters."
+      - "Password policies: minimum length 12 chars; no maximum < 64; no composition rules (per NIST SP 800-63B); compare against a leaked-credential database (HIBP, internal breach list) at set + change time."
+      - "Failed-login throttling protects the hash function from being used as a brute-force oracle: after 5 failures within 5 minutes, require CAPTCHA and add per-account delay."

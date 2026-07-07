@@ -1,0 +1,383 @@
+{
+  "$defs": {
+    "Column": {
+      "additionalProperties": false,
+      "description": "A single column on a table.\n\n``type`` preserves the raw DDL type string (e.g. ``VARCHAR2(50)``,\n``NUMBER(10,2)``, ``UNIQUEIDENTIFIER``) \u2014 the M-tier file contract is\ndialect-preserving so downstream M3 / M4 / S60 can reason about the\nlegacy schema without re-parsing the source DDL.",
+      "properties": {
+        "default": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "nullable": {
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "pii_classification": {
+          "anyOf": [
+            {
+              "enum": [
+                "pii",
+                "sensitive",
+                "public",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pii Classification"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "nullable"
+      ],
+      "title": "Column",
+      "type": "object"
+    },
+    "ForeignKey": {
+      "additionalProperties": false,
+      "description": "A single foreign-key constraint on a table.\n\nMulti-column FKs are supported via the parallel ``columns`` /\n``referenced_columns`` lists; their lengths must match (validated at\nStage B in ``shared/object_inventory.py``).",
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "constraint_name": {
+          "title": "Constraint Name",
+          "type": "string"
+        },
+        "on_delete": {
+          "anyOf": [
+            {
+              "enum": [
+                "cascade",
+                "set_null",
+                "restrict",
+                "no_action"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Delete"
+        },
+        "referenced_columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Referenced Columns",
+          "type": "array"
+        },
+        "referenced_table": {
+          "title": "Referenced Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "constraint_name",
+        "columns",
+        "referenced_table",
+        "referenced_columns"
+      ],
+      "title": "ForeignKey",
+      "type": "object"
+    },
+    "Index": {
+      "additionalProperties": false,
+      "description": "A single index on a table.\n\n``kind`` is dialect-normalised to the union of recognised index types\nacross the five shipped dialects (Oracle, T-SQL, DB2, PostgreSQL,\nMySQL). Dialect-specific index attributes that do not normalise are\ncaptured by ``unknown`` so the digest still records the presence.",
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "kind": {
+          "default": "unknown",
+          "enum": [
+            "btree",
+            "bitmap",
+            "hash",
+            "fulltext",
+            "spatial",
+            "clustered",
+            "nonclustered",
+            "unknown"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "unique": {
+          "title": "Unique",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "columns",
+        "unique"
+      ],
+      "title": "Index",
+      "type": "object"
+    },
+    "Sequence": {
+      "additionalProperties": false,
+      "description": "A database sequence (Oracle ``SEQUENCE`` / T-SQL ``SEQUENCE`` /\nDB2 ``SEQUENCE`` / PostgreSQL ``SEQUENCE`` \u2014 MySQL omits but ships\nAUTO_INCREMENT semantics which Stage B normalises into a Sequence\nrecord for downstream consistency).",
+      "properties": {
+        "cache_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Size"
+        },
+        "increment": {
+          "title": "Increment",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "schema": {
+          "title": "Schema",
+          "type": "string"
+        },
+        "start": {
+          "title": "Start",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "schema",
+        "start",
+        "increment"
+      ],
+      "title": "Sequence",
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "description": "A single table profile.\n\nCarries enough context for M2 / M3 / M4 to operate without re-reading\nthe original DDL source: columns (with ``pii_classification`` for S60\ncross-reference), primary key, foreign keys, indexes, line-of-business\nclassification (Stage D), row-count estimate (best-effort from\n``ANALYZE``-style hints in the DDL), and the hotspot / orphan flags\ncomputed in Stage E.",
+      "properties": {
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/Column"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "foreign_keys": {
+          "items": {
+            "$ref": "#/$defs/ForeignKey"
+          },
+          "title": "Foreign Keys",
+          "type": "array"
+        },
+        "indexes": {
+          "items": {
+            "$ref": "#/$defs/Index"
+          },
+          "title": "Indexes",
+          "type": "array"
+        },
+        "is_hotspot": {
+          "default": false,
+          "title": "Is Hotspot",
+          "type": "boolean"
+        },
+        "is_orphan": {
+          "default": false,
+          "title": "Is Orphan",
+          "type": "boolean"
+        },
+        "lob_classification": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lob Classification"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "primary_key": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Primary Key",
+          "type": "array"
+        },
+        "row_count_estimate": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row Count Estimate"
+        },
+        "schema": {
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "schema",
+        "columns"
+      ],
+      "title": "Table",
+      "type": "object"
+    },
+    "View": {
+      "additionalProperties": false,
+      "description": "A database view.\n\n``definition_sql`` preserves the original ``CREATE VIEW`` body so\nStage C can build the view-reference dependency DAG without\nre-walking the AST, and so M3 can audit view-shaped logic when\nsequencing a strangler-fig decomposition.",
+      "properties": {
+        "definition_sql": {
+          "title": "Definition Sql",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "referenced_tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Referenced Tables",
+          "type": "array"
+        },
+        "schema": {
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "schema",
+        "definition_sql"
+      ],
+      "title": "View",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level digest produced by the M1 pipeline.\n\nSchema-versioned so downstream primitives can refuse to consume a\nmismatched output (design spec \u00a7\"File contract\" rule).\n``source_dialect`` is a free-form string \u2014 sqlglot owns the dialect\nregistry, matching the M2 ``StoredProcDigest`` pattern.\n\n``dependency_dag_edges`` is the list of directed FK / view-reference\nedges Stage C extracted. Each edge is a ``(from_table, to_table)``\npair encoded as a tuple; the ``schema.foreign_keys`` field on each\n``Table`` carries the same information at the constraint level, but\na flat edge list makes Stage E's hotspot scoring and M3's\nbounded-context discovery cheap.\n\n``foundry_primitive_versions`` records the version of every foundry\nprimitive that contributed to the digest, for provenance \u2014 design\nspec \u00a7\"File contract\" requirement.\n\nGemini subset (issue #548 / SPEC \u00a76.3 + \u00a77.2): this is a canonical\npersisted artefact, not an LLM ``response_format`` schema. Pydantic\nemits ``anyOf`` for ``Optional[...]`` columns + ``$ref`` chains for\nnested ``Table``/``Column`` models \u2014 both exceed Gemini's\n``responseSchema`` subset. Decorated with ``@accepts_extended_schema``\nso the SchemaDigest is NOT routed through harness structured-output\nmode. If a future PR ever wires SchemaDigest through ``response_format``,\nthe schema must first be flattened (drop ``$defs``/``$ref`` indirection,\nreplace ``Optional`` with ``nullable``) or the call site must explicitly\ncatch ``HarnessUnsupportedError`` and fall back to free-form parsing.",
+  "properties": {
+    "dependency_dag_edges": {
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "title": "Dependency Dag Edges",
+      "type": "array"
+    },
+    "foundry_primitive_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Foundry Primitive Versions",
+      "type": "object"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequences": {
+      "items": {
+        "$ref": "#/$defs/Sequence"
+      },
+      "title": "Sequences",
+      "type": "array"
+    },
+    "source_dialect": {
+      "title": "Source Dialect",
+      "type": "string"
+    },
+    "tables": {
+      "items": {
+        "$ref": "#/$defs/Table"
+      },
+      "title": "Tables",
+      "type": "array"
+    },
+    "views": {
+      "items": {
+        "$ref": "#/$defs/View"
+      },
+      "title": "Views",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_dialect"
+  ],
+  "title": "SchemaDigest",
+  "type": "object"
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "s1-findings",
+  "title": "S1 sdet-architect scoped-analysis findings",
+  "description": "Output of the S1 sdet_architect scoped-analysis mode: inferred testing conventions + best-practice gaps scoped to a blast radius (impacted symbols + sampled tests). Consumed by the S2 test_maintainer proposer to guide update/add edits toward house style.",
+  "type": "object",
+  "required": ["schema_version", "conventions", "gaps"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version — always '1.0' for this release."
+    },
+    "conventions": {
+      "type": "object",
+      "description": "Inferred testing conventions from the sampled existing tests.",
+      "required": ["framework", "layout", "naming", "fixture_mock_idioms", "assertion_style"],
+      "additionalProperties": false,
+      "properties": {
+        "framework": {
+          "type": "string",
+          "description": "Primary test framework detected (e.g. 'pytest', 'jest', 'junit5', 'vitest', 'testng')."
+        },
+        "layout": {
+          "type": "string",
+          "description": "Test directory layout convention (e.g. 'tests/ mirroring src/', 'co-located __tests__/', 'src/test/java/')."
+        },
+        "naming": {
+          "type": "string",
+          "description": "Naming convention for test functions/methods/classes (e.g. 'test_<thing>_<condition>' for pytest, 'should_<verb>When<Condition>' for JUnit, 'describe/it' for jest)."
+        },
+        "fixture_mock_idioms": {
+          "type": "string",
+          "description": "Observed fixture and mock idioms (e.g. '@pytest.fixture', 'jest.fn()', 'Mockito.mock()', 'factories via conftest.py')."
+        },
+        "assertion_style": {
+          "type": "string",
+          "description": "Assertion style in use (e.g. 'assert <expr>', 'expect(...).toBe(...)', 'assertThat(...).isEqualTo(...)')."
+        },
+        "extra": {
+          "type": "object",
+          "description": "Optional stack-specific or project-specific observations beyond the five standard fields.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "description": "Best-practice gaps scoped to the blast radius (impacted symbols/tests). Each gap describes a missing test scenario or test smell that S2 should close with an 'add' proposal or flag as 'Needs human attention'.",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "gap_type", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "The changed/new symbol (function, method, or class) this gap applies to."
+          },
+          "gap_type": {
+            "type": "string",
+            "enum": [
+              "missing_negative_test",
+              "missing_edge_case",
+              "untested_symbol",
+              "test_smell",
+              "missing_contract_test",
+              "other"
+            ],
+            "description": "Category of gap: missing_negative_test (no error/exception path), missing_edge_case (boundary / empty input), untested_symbol (no test reaches this symbol), test_smell (brittle / unclear / high-maintenance test pattern), missing_contract_test (cross-service boundary not covered), other."
+          },
+          "description": {
+            "type": "string",
+            "description": "One or two sentence description of the gap and what a closing test should cover."
+          },
+          "suggested_test_name": {
+            "type": "string",
+            "description": "Optional: a suggested test function/method name following the repo's naming convention."
+          }
+        }
+      }
+    }
+  }
+}

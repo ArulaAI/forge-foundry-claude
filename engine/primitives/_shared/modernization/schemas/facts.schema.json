@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "FactsInterface": {
+      "additionalProperties": false,
+      "description": "A boundary the system exposes to, or consumes from, the outside.\n\n``direction`` separates the two halves of cross-unit correlation: an\n``exposed`` interface of unit A that matches a ``consumed`` interface of unit\nB is an edge ``B \u2192 A`` (``correlate.py``, #634).",
+      "properties": {
+        "direction": {
+          "enum": [
+            "exposed",
+            "consumed"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "kind": {
+          "default": "",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "direction"
+      ],
+      "title": "FactsInterface",
+      "type": "object"
+    },
+    "FactsUnit": {
+      "additionalProperties": false,
+      "description": "A unit of work (program / class / service / batch job).\n\n``weight`` is a flavor-supplied ranking proxy (lines of code or a complexity\nscore) used to pick the *key entities* for the digest; the engine does not\ninterpret its absolute value, only its ordering.",
+      "properties": {
+        "calls_to": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Calls To",
+          "type": "array"
+        },
+        "kind": {
+          "default": "",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "weight": {
+          "default": 0,
+          "title": "Weight",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "FactsUnit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The language-agnostic *full facts* a primitive hands the engine.\n\nA flavor/primitive maps its rich discovery model onto this contract (M5's\n``analyze.py`` adapts ``AnalysisDigest`` \u2192 ``EngineFacts``). The engine reads\nonly this shape, so it stays decoupled from any one platform flavor.\n\n``migration_state`` / ``domains`` / ``tier_hint`` are optional interpretive\nfields populated by later detectors (M3 ``context_detector`` /\n``antipattern_detector``); they pass straight through ``compress`` and are\n``None`` / empty for a primitive that does not compute them (e.g. M5).",
+  "properties": {
+    "code_root": {
+      "title": "Code Root",
+      "type": "string"
+    },
+    "debt": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Debt",
+      "type": "array"
+    },
+    "domains": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Domains",
+      "type": "array"
+    },
+    "flavor": {
+      "title": "Flavor",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "interfaces": {
+      "items": {
+        "$ref": "#/$defs/FactsInterface"
+      },
+      "title": "Interfaces",
+      "type": "array"
+    },
+    "loc_by_language": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Loc By Language",
+      "type": "object"
+    },
+    "migration_state": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Migration State"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shared_components": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Shared Components",
+      "type": "array"
+    },
+    "tier_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tier Hint"
+    },
+    "units": {
+      "items": {
+        "$ref": "#/$defs/FactsUnit"
+      },
+      "title": "Units",
+      "type": "array"
+    }
+  },
+  "required": [
+    "code_root",
+    "flavor"
+  ],
+  "title": "EngineFacts",
+  "type": "object"
+}

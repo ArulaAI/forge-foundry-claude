@@ -1,0 +1,57 @@
+# R1 /rules-gen catalog — ANSI SQL portable conventions.
+#
+# Path-scoped to .sql files. Covers portable ANSI SQL idioms that
+# travel across Oracle, Postgres, MSSQL, MySQL, DB2 — the "lowest
+# common denominator with teeth" subset. Layered under (not replaced
+# by) dialect-specific catalogs (oracle-plsql, mssql, postgres) for
+# files where dialect features are needed.
+name: sql-ansi
+description: "ANSI SQL standards: parameterized queries, explicit JOINs, CTEs, window functions"
+version: "1.0.0"
+paths:
+  - "**/*.sql"
+sections:
+  - heading: "Parameterized queries and injection defense"
+    rules:
+      - "Every value from outside the database (request parameters, file contents, environment) flows via a bind parameter — `?`, `$1`, `:name`, or `@p1` depending on the driver. String interpolation into a SQL literal fails review."
+      - "Identifiers (table names, column names) cannot be parameterized — when they vary, validate against an allowlist on the application side, never let user input form an identifier."
+      - "Avoid dynamic SQL in stored procedures (`EXECUTE IMMEDIATE`, `sp_executesql`, `PREPARE`) unless you bind every variable; concatenated dynamic SQL is the highest-severity injection pattern in BFSI codebases."
+      - "Use parameterized `LIKE` patterns with explicit `ESCAPE '\\'` to defeat `%`/`_` injection that would otherwise widen the match set."
+      - "Never trust ORDER BY or LIMIT clause values from a request — even pagination integers must be cast/validated before they reach the SQL string."
+      - "Review every `WHERE ... OR ...` for unintended row exposure — `WHERE id = ? OR 1=1` is the canonical injection payload; structural correctness matters even with bind variables."
+
+  - heading: "Explicit JOIN syntax and predicates"
+    rules:
+      - "Use explicit `JOIN ... ON ...` syntax — comma-separated `FROM a, b WHERE a.x = b.x` is forbidden because a missed predicate produces a silent Cartesian product."
+      - "Always specify the join type explicitly (`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, `FULL OUTER JOIN`); bare `JOIN` implies `INNER` but reads ambiguously across team members."
+      - "Predicates that filter a single table belong in the `WHERE` clause; predicates that condition the join belong in `ON` — moving an outer-join filter to `WHERE` accidentally converts it to an inner join."
+      - "Avoid `SELECT *` in production queries (it's tolerable in ad-hoc analysis); the column list is a contract that catches schema-drift surprises at compile time, not query time."
+      - "Alias every table in a multi-table query and qualify every column reference (`t1.id`, not bare `id`); unqualified columns become ambiguous after a future schema change and produce silent semantic errors."
+      - "Use `USING (col)` only when the join column has the same name on both sides AND you actually want the column collapsed into a single output column; otherwise prefer `ON a.col = b.col` for clarity."
+
+  - heading: "CTEs and window functions"
+    rules:
+      - "Use Common Table Expressions (`WITH cte AS (...)`) instead of nested sub-queries for readability — the named structure tracks intent through complex aggregations and matches the modern optimizer's hint surface."
+      - "Recursive CTEs (`WITH RECURSIVE`) handle tree / graph traversal portably; cap the recursion depth with an explicit termination predicate, not just `LIMIT`, to defeat runaway queries."
+      - "Window functions (`ROW_NUMBER()`, `RANK()`, `LAG()`, `LEAD()`, `SUM() OVER (...)`) replace correlated sub-queries for ranking, deduplication, and running totals — the optimizer handles them as a single pass."
+      - "Frame specification matters: `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` differs from the default `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` when there are ties in the ORDER BY — be explicit."
+      - "Materialization hints (`WITH cte AS MATERIALIZED (...)` in Postgres 12+, `OPTION (FORCE ORDER)` in MSSQL) are a power-user tool — measure before applying them; the optimizer is usually right."
+      - "Avoid `SELECT DISTINCT` when a `GROUP BY` would express intent more clearly; `DISTINCT` is the canonical sign of a missing JOIN predicate or a missing window function."
+
+  - heading: "Set operations, aggregation, and NULL handling"
+    rules:
+      - "`UNION ALL` is faster than `UNION` — only use `UNION` when you actually need duplicate removal; the optimizer cannot infer this from data shape."
+      - "Aggregate functions ignore NULL except `COUNT(*)`; `COUNT(col)` and `SUM(col)` skip NULLs but `AVG(col)` divides by the non-null count — pre-coalesce when business semantics treat NULL as zero."
+      - "`NULL = NULL` is UNKNOWN, not TRUE — use `IS NULL` / `IS NOT NULL` / `IS DISTINCT FROM` instead of `=` / `<>` for nullable columns; `COALESCE(a, '') = COALESCE(b, '')` is the portable workaround for `IS NOT DISTINCT FROM`."
+      - "`NOT IN (subquery)` returns no rows if the subquery contains a NULL — prefer `NOT EXISTS` for negation predicates; the semantics are saner and the optimizer plans them more aggressively."
+      - "Use `CASE` expressions to bucket data inside `GROUP BY` and `ORDER BY` clauses; portable across all major engines, where `IF()` / `IIF()` / `DECODE()` are dialect-specific."
+      - "Beware integer division (`5 / 2 = 2` in SQL Server and Oracle by default); cast at least one operand to numeric/decimal when you want fractional results."
+
+  - heading: "Transactions, isolation, and constraints"
+    rules:
+      - "Every write transaction is bounded by an explicit `BEGIN` / `COMMIT` / `ROLLBACK`; autocommit drift across drivers is the #1 source of partial-update bugs."
+      - "Choose isolation explicitly (`READ COMMITTED`, `REPEATABLE READ`, `SERIALIZABLE`, `SNAPSHOT`); the default differs across engines (Oracle defaults to READ COMMITTED, Postgres too, MSSQL defaults to READ COMMITTED but supports SNAPSHOT)."
+      - "Foreign keys are declared and enforced by the database — application-only referential integrity drifts within a release. Use `ON DELETE CASCADE` / `ON DELETE SET NULL` deliberately, not as a default."
+      - "`CHECK` constraints encode business invariants at the schema level (e.g. `CHECK (amount > 0)`); they survive ORM bugs and ad-hoc DBA scripts."
+      - "Unique indexes carry NULL semantics that vary by engine — Postgres permits multiple NULLs in a UNIQUE column, MSSQL permits one NULL, Oracle permits multiple. Add a `WHERE col IS NOT NULL` partial index or a `COALESCE`-based functional index for portable semantics."
+      - "Generate IDs at the database layer (`SEQUENCE`, `IDENTITY`, `GENERATED ALWAYS AS IDENTITY`) when monotonicity matters; UUIDv7 (time-ordered UUIDs) is the modern portable answer when distributed insert ordering matters more than density."

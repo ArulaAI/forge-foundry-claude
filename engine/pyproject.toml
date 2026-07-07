@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-foundry-claude-engine"
+version = "0.1.0"
+description = "Bundled deterministic engine for the forge-foundry-claude plugin (vendored)."
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1.7",
+    "defusedxml>=0.7.1",
+    "pydantic>=2.7.0",
+    "pyyaml>=6.0.1",
+    "sqlglot>=25.0.0",
+    "jinja2>=3.1.4",
+    "tomli-w>=1.0",
+]
+
+[project.scripts]
+forge-validate = "forge_validate.cli:main"
+
+[tool.setuptools]
+packages = ["forge_validate", "primitives"]
+
+[tool.setuptools.package-dir]
+"" = "."

@@ -1,0 +1,73 @@
+# M1 Stage D — line-of-business regex pack
+#
+# Each entry is `{pattern, lob}`. ``pattern`` is a Python ``re``
+# pattern matched **case-insensitively** against the bare table name
+# (no schema qualifier). The first matching entry wins, so order
+# matters: more-specific prefixes appear before more-generic ones.
+#
+# The ``lob`` value set is closed — Stage D's anti-hallucination guard
+# rejects any LLM response that names a value not present in this list.
+# Adding a new ``lob`` value here is the only way to extend the
+# vocabulary.
+#
+# BFSI-shaped, since the M-tier modernization workbench's primary
+# audience is core-banking / insurance / capital-markets shops. The
+# defaults intentionally cover the bulk of legacy schema naming
+# conventions across the four shipped dialects (Oracle, T-SQL, DB2,
+# plus PostgreSQL/MySQL via sqlglot).
+#
+# Pattern conventions:
+# - Anchor with ``^`` so a prefix match cannot fire on a substring.
+# - Use a non-capturing alternation ``(?:CUST|CUSTOMER|CLIENT)`` to
+#   keep the YAML compact.
+# - Use ``(?:_|$)`` (or just ``_``) as a trailing boundary so a
+#   prefix-only table (e.g. ``CUSTOMER``) still classifies.
+#
+# Anti-hallucination: every literal in ``lob:`` must also appear in
+# :data:`primitives.db_schema_analyze.shared.lob_classifier.LOB_VOCABULARY`.
+# A test (``test_lob_yaml_vocabulary_subset_of_module``) locks the
+# YAML against the module to prevent silent drift.
+
+# Customer / client identity
+- pattern: '^(?:CUST|CUSTOMER|CLIENT|PARTY|MEMBER)(?:_|$)'
+  lob: customer
+
+# Account-of-record (deposit, savings, brokerage, etc.)
+- pattern: '^(?:ACCT|ACCOUNT|DEPOSIT|SAVINGS|CHECKING|BROKERAGE)(?:_|$)'
+  lob: account
+
+# Transactions / postings / movements
+- pattern: '^(?:TXN|TRANSACTION|TRX|POSTING|MOVEMENT|TRANSFER)(?:_|$)'
+  lob: transaction
+
+# General ledger
+- pattern: '^(?:LEDGER|GL|GENERAL_LEDGER|JOURNAL|JE)(?:_|$)'
+  lob: ledger
+
+# Reference / lookup tables (status codes, country codes, etc.)
+- pattern: '^(?:REF|LKUP|LOOKUP|CODE|ENUM|DIM)(?:_|$)'
+  lob: reference
+
+# Audit / history / changelog
+- pattern: '^(?:AUDIT|HIST|HISTORY|CHANGELOG|EVT|EVENT_LOG)(?:_|$)'
+  lob: audit
+
+# Product / instrument catalog
+- pattern: '^(?:PROD|PRODUCT|INSTRUMENT|SECURITY|ASSET)(?:_|$)'
+  lob: product
+
+# Billing / invoicing
+- pattern: '^(?:BILL|BILLING|INVOICE|INV|CHARGE|PAYMENT)(?:_|$)'
+  lob: billing
+
+# Regulatory / compliance
+- pattern: '^(?:REG|COMPLIANCE|KYC|AML|REGULATORY|SANCTION)(?:_|$)'
+  lob: compliance
+
+# Risk / exposure / limit
+- pattern: '^(?:RISK|LIMIT|EXPOSURE|RATING|RWA)(?:_|$)'
+  lob: risk
+
+# Pricing / market data
+- pattern: '^(?:PRICE|PRICING|QUOTE|RATE|FX|MARKET)(?:_|$)'
+  lob: pricing

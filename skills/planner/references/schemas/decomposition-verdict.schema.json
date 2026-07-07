@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decomposition-verdict",
+  "title": "C2 planner decomposition verdict",
+  "description": "Structured output emitted by the C2 /planner skill body indicating whether the planned work is atomic (a single deliverable) or should be split into independent child work units. Consumed by the C7 work-orchestrator plan stage.",
+  "type": "object",
+  "required": ["schema_version", "decomposition"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version — always '1.0' for this release."
+    },
+    "decomposition": {
+      "type": "string",
+      "enum": ["atomic", "split"],
+      "description": "Verdict: 'atomic' when the work is a single independent deliverable; 'split' when the planner judges the work to be more than one independent unit and emits child descriptors."
+    },
+    "children": {
+      "type": "array",
+      "description": "Required when decomposition is 'split'. Each entry describes one independent child work unit. Must be absent or empty when decomposition is 'atomic'.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "spec_seed", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title for the child work unit."
+          },
+          "spec_seed": {
+            "type": "string",
+            "description": "A brief spec-seed (goal + scope) that C1 /spec-write can expand into a full spec for this child."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "One or two sentences explaining why this is an independent unit and how it relates to the parent goal."
+          }
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "decomposition": { "const": "split" }
+    }
+  },
+  "then": {
+    "required": ["children"]
+  }
+}

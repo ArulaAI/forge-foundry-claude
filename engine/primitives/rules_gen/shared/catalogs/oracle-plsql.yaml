@@ -1,0 +1,60 @@
+# R1 /rules-gen catalog — Oracle 23c / PL/SQL.
+#
+# Path-scoped to SQL + PL/SQL source files (.sql, .pks, .pkb, .prc).
+# Targets Oracle 23c features (JSON Relational Duality, SQL Domains,
+# Schema Privileges, Boolean type in SQL, IF [NOT] EXISTS DDL) plus the
+# canonical PL/SQL idioms (packages, FORALL/BULK COLLECT, edition-based
+# redefinition, Result Cache, hints, DBMS_PARALLEL_EXECUTE).
+name: oracle-plsql
+description: "Oracle 23c PL/SQL packages, BULK COLLECT, edition-based redefinition"
+version: "1.0.0"
+paths:
+  - "**/*.sql"
+  - "**/*.pks"
+  - "**/*.pkb"
+  - "**/*.prc"
+sections:
+  - heading: "Oracle 23c language features"
+    rules:
+      - "Use the native `BOOLEAN` SQL type (Oracle 23c) instead of the legacy `NUMBER(1)` / `CHAR(1)` boolean encoding; the SQL-standard type integrates with JDBC and OCI drivers without the historical NUMBER-to-boolean adapter layer."
+      - "SQL Domains (Oracle 23c, `CREATE DOMAIN`) carry the data type, default, NOT NULL, CHECK constraints, and display format in one reusable schema object — replaces the pattern of repeating the same `CHECK (status IN (...))` constraint across columns."
+      - "JSON Relational Duality Views (Oracle 23c) project a relational schema as a JSON document and let writes against the view land in the underlying tables with FK integrity — replaces a bespoke JSON-shadow-table approach."
+      - "`IF [NOT] EXISTS` is supported on DDL (`CREATE TABLE IF NOT EXISTS`, `DROP INDEX IF EXISTS`) in Oracle 23c; migration scripts no longer need the `BEGIN EXECUTE IMMEDIATE ... EXCEPTION WHEN OTHERS` boilerplate."
+      - "Schema-level privileges (Oracle 23c, `GRANT SELECT ANY TABLE ON SCHEMA app TO ROLE reader`) replace the per-table grant loop; revoke is similarly schema-scoped."
+      - "Use `SELECT ... INTO` in PL/SQL only when exactly one row is guaranteed; otherwise prefer `BULK COLLECT INTO` to avoid `NO_DATA_FOUND` / `TOO_MANY_ROWS` surprises."
+
+  - heading: "Packages, procedures, and best practices"
+    rules:
+      - "Every public PL/SQL procedure or function lives inside a package — bare schema-level procedures are grandfathered only. Packages enable cross-procedure private state, named-parameter calls, and dependency-tracking that schema-level objects cannot."
+      - "Package specification (.pks) declares the public surface; package body (.pkb) carries the implementation. Keep private helpers out of the spec — exposing them locks downstream callers to the implementation shape."
+      - "Use named-notation parameter calls (`my_proc(p_id => 42, p_kind => 'A')`) for any procedure with > 2 parameters; positional calls become fragile when a parameter is added in the middle."
+      - "Initialize package state in the package's initialization block (executed once on first reference per session); don't repeat it on every call."
+      - "Wrap any operation that touches a date / time across a DST boundary in an explicit `TIMESTAMP WITH TIME ZONE` rather than `DATE` — Oracle's legacy `DATE` type has no time zone and converts at runtime in surprising ways."
+      - "Use `%ROWTYPE` and `%TYPE` everywhere — column types change, and `%TYPE` keeps the variable in sync without manual coordination."
+
+  - heading: "FORALL, BULK COLLECT, and performance"
+    rules:
+      - "Process collections of rows with `BULK COLLECT INTO` (reads) and `FORALL` (writes); a row-by-row cursor loop in PL/SQL is typically 10-100x slower because each row triggers an SQL-to-PL/SQL context switch."
+      - "Cap `BULK COLLECT INTO` with `LIMIT 1000` (or similar) when the result set is unbounded — fetching an arbitrary-sized collection into PGA memory invites ORA-04030."
+      - "`FORALL ... SAVE EXCEPTIONS` continues past row-level errors and accumulates them in `SQL%BULK_EXCEPTIONS`; lets a batch job report per-row failures without aborting the whole batch."
+      - "Use Native Compilation (`ALTER PROCEDURE … COMPILE PLSQL_CODE_TYPE = NATIVE`) for CPU-bound PL/SQL — produces a shared library that bypasses the PL/SQL interpreter loop. Measure first; for IO-bound code it makes no difference."
+      - "PL/SQL Function Result Cache (`FUNCTION ... RETURN ... RESULT_CACHE`) caches scalar results across sessions; appropriate for read-mostly lookup functions (currency rates, product metadata)."
+      - "Avoid `DBMS_OUTPUT.PUT_LINE` in production code — it buffers in the session and is not visible in production deployments. Use the application's logging table or autonomous-transaction logger instead."
+
+  - heading: "Edition-based redefinition and online deployments"
+    rules:
+      - "Edition-based redefinition (EBR, `CREATE EDITION new_release`) enables zero-downtime schema changes: define new editions of PL/SQL objects, route a subset of sessions to test the new edition, swap the default edition once green."
+      - "EBR-compatible schemas use editioning views (`CREATE EDITIONING VIEW`) over real tables so different editions can see different column projections of the same underlying data — additive column changes are zero-downtime."
+      - "Cross-edition triggers (`AS CROSSEDITION`) propagate writes between the old and new column representations during an EBR migration window — the old edition keeps reading the old shape, the new edition reads the new shape."
+      - "DDL on a non-editionable object (heap tables, sequences) blocks online deployment; EBR-migrate to editionable objects before relying on zero-downtime deployment for the table."
+      - "Application drives the `ALTER SESSION SET EDITION = ...` on connect; the connection pool must propagate this — pool drivers that share connections across logical users / editions create cross-edition leaks."
+      - "`DBMS_REDEFINITION` is the heavier hammer for shape changes that EBR cannot express (PK changes, partition reorganization); plan for the additional space and validate the redefinition in a staging environment with production-scale data."
+
+  - heading: "Concurrency, error handling, and observability"
+    rules:
+      - "Use `SELECT ... FOR UPDATE [SKIP LOCKED | NOWAIT]` for explicit row-level locks; `SKIP LOCKED` enables queue-style consumers without serializing on a heavily contended row."
+      - "Pragma `AUTONOMOUS_TRANSACTION` is the right tool for audit-log inserts that must survive a parent-transaction rollback; misuse causes mutating-trigger anomalies — keep AT procedures small and side-effect-isolated."
+      - "Use `PRAGMA EXCEPTION_INIT` to name Oracle-specific errors (e.g. ORA-00001 → `e_duplicate_key`) and catch by name; `WHEN OTHERS THEN NULL` swallows real exceptions and is forbidden outside cleanup blocks that re-raise."
+      - "`DBMS_APPLICATION_INFO.SET_MODULE` / `SET_ACTION` decorates the session with application context that V$SESSION exposes — invaluable for DBA-side troubleshooting of running PL/SQL."
+      - "AWR (Automatic Workload Repository) and SQL trace (`DBMS_MONITOR.SESSION_TRACE_ENABLE`) are the canonical performance-tuning surfaces; query plans via `EXPLAIN PLAN FOR ... ; SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)` for ad-hoc analysis."
+      - "Avoid `WHEN OTHERS THEN ROLLBACK` in a trigger — it produces mutating-table errors and obscures the root cause. Triggers should let exceptions propagate to the calling transaction."

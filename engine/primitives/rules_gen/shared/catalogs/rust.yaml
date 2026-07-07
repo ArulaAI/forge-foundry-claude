@@ -1,0 +1,58 @@
+# R1 /rules-gen catalog — Rust 2024 edition application and library code.
+#
+# Path-scoped: covers .rs sources and Cargo.toml. Targets the Rust 2024
+# edition surface (let-else, GATs, async fn in traits stabilized, RPITIT,
+# improved diagnostics), the canonical Cargo workspace pattern, the
+# rustfmt + clippy lint stack, and the testing + async runtime ecosystem.
+name: rust
+description: "Rust 2024 edition idioms, Cargo workspaces, clippy, and async"
+version: "1.0.0"
+paths:
+  - "**/*.rs"
+  - "**/Cargo.toml"
+sections:
+  - heading: "Edition, language idioms, and ownership"
+    rules:
+      - "Use `edition = \"2024\"` in `Cargo.toml` for new crates; the 2024 edition lints encourage modern idioms and bring let-else, async fn in traits, and stricter pattern syntax into normal use."
+      - "Prefer iterator chains (`.iter().filter().map().collect()`) over hand-rolled for-loops with mutation; iterator chains optimize cleanly and read declaratively."
+      - "Use `let Some(x) = opt else { return };` (let-else, stable 1.65+) for early-return on None / Err — replaces the `match opt { Some(x) => x, None => return }` boilerplate."
+      - "Avoid `.unwrap()` and `.expect()` in production code — propagate with `?`, return `Result`/`Option`, or `match` exhaustively. `unwrap()` is acceptable in tests, examples, and binaries where panicking is the documented contract."
+      - "Use `Cow<'_, str>` (or `Box<str>`) over `String` for read-mostly fields; avoid `String` when `&str` suffices — interior allocation is a real cost in hot paths."
+      - "Prefer `&[T]` over `&Vec<T>`, `&str` over `&String` in function parameters — slices accept more callers and avoid useless deref."
+      - "Use `#[derive(Debug, Clone, PartialEq, Eq, Hash)]` thoughtfully on public types; missing `Debug` makes failures opaque, but auto-deriving `Clone` on large or sensitive types invites silent expensive copies."
+
+  - heading: "Error handling"
+    rules:
+      - "Library crates expose error types via `thiserror` (or hand-rolled `enum` with `Display` + `Error` impls); errors carry source-chain via `#[source]` so callers see the causal trace via `Error::source`."
+      - "Application code (binaries) uses `anyhow::Result<T>` for ergonomic propagation; libraries do NOT use `anyhow` in their public API — opaque errors hurt downstream typing."
+      - "Use `?` consistently; if the source error type does not satisfy `From<E>` for the target type, add a `#[from]` variant (thiserror) or an explicit `.map_err`."
+      - "Never `panic!` for recoverable errors. `panic!` is reserved for invariant violations (poisoned mutex, integer overflow in debug, programmer-supplied bad indices)."
+      - "Use `Result<(), E>` returns from `fn main() -> anyhow::Result<()>` and from integration tests; legacy `Result<(), Box<dyn Error>>` works but `anyhow::Result` displays better."
+      - "Add `#[track_caller]` to thin wrapper functions that panic; the panic site then points at the caller, not the wrapper — invaluable when `Vec::index` is wrapped."
+
+  - heading: "Cargo workspace, dependencies, and feature flags"
+    rules:
+      - "Workspaces (`[workspace]` in root `Cargo.toml`) share build artifacts across crates; use `[workspace.dependencies]` to pin every external dep in one place, then `dep = { workspace = true }` in member crates."
+      - "Use `cargo-deny` for license + security + duplicate-version policy enforcement; CI fails on policy violations. `cargo-audit` covers the RustSec advisory DB."
+      - "Pin dependencies by major version (`1`) unless a specific patch has a known regression; `Cargo.lock` is committed for binaries, omitted for libraries (the latter so downstream apps decide)."
+      - "Feature flags are additive and namespaced — never use `default-features` to disable functionality (downstream cannot re-enable). Document features in the crate-level Rustdoc."
+      - "Avoid `*` and broad version ranges in dependencies — they break reproducibility and let supply-chain attacks slip through."
+      - "Use `cargo machete` (or `cargo-udeps` on nightly) in CI to catch unused dependencies — they expand the supply-chain attack surface for no benefit."
+
+  - heading: "Lint, format, and unsafe code"
+    rules:
+      - "`rustfmt` is the canonical formatter; CI runs `cargo fmt -- --check`. Disagreements with rustfmt go upstream — never local exception files."
+      - "`cargo clippy --all-targets --all-features -- -D warnings` is the CI gate; `clippy::pedantic` and `clippy::nursery` are encouraged but advisory in new crates, mandatory in mature ones."
+      - "Forbid unsafe at the crate level (`#![forbid(unsafe_code)]`) unless the crate's purpose requires it; any `unsafe` block must carry a `// SAFETY:` comment explaining why the invariants hold."
+      - "`#[deny(missing_docs)]` on public library APIs; `cargo doc --no-deps -- -D warnings` runs in CI to catch broken intra-doc links."
+      - "Generic bounds use `where` clauses for readability when constraints stack; avoid inline `<T: A + B + C + D>` lists on long signatures."
+
+  - heading: "Async, concurrency, and testing"
+    rules:
+      - "Choose ONE async runtime per binary (Tokio for the dominant ecosystem, async-std as legacy alternative); mixing runtimes in one process produces hangs that are nightmares to debug."
+      - "Use `tokio::sync::Mutex` for guarding state held across `.await` points; `std::sync::Mutex` blocks the runtime thread if held across `.await` (clippy lint `await_holding_lock` catches this)."
+      - "Cancellation is cooperative: drop futures to cancel them. Design APIs so partially-consumed state remains coherent under cancellation (no half-written DB rows from an interrupted task)."
+      - "Spawn long-running tasks with `tokio::spawn` and store the `JoinHandle`; never `let _ = spawn(...)` and forget — orphan tasks leak and ignore shutdown signals."
+      - "Tests run with `#[tokio::test]` (or `#[async_std::test]`); use `tokio::test(flavor = \"multi_thread\")` when the test exercises actual parallelism."
+      - "Integration tests live under `tests/` and exercise the public API; unit tests live alongside source in `#[cfg(test)] mod tests` blocks and may exercise private functions."
+      - "Use `proptest` or `quickcheck` for property-based tests; one strategy beats dozens of hand-crafted examples for parser / encoder code."

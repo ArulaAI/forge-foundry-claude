@@ -1,0 +1,50 @@
+{# M6 /mod-synth-logs Phase C — network renderer body (M6-TEMPLATE-2 / #470).
+
+   Renders the body of ``_render_network()``. Output line shape
+   (per issue #470 acceptance):
+
+       <timestamp> <src_ip>:<src_port> -> <dst_ip>:<dst_port> <bytes_sent> <bytes_recv> <protocol>
+
+   - ``src_ip:src_port`` and ``dst_ip:dst_port``: drawn from
+     ``entities_digest["networks_and_ports"]`` (each entry is a
+     pre-canonicalised ``host:port`` literal). Direction is randomised
+     per line; both ends always resolve to entries in the catalog.
+   - ``bytes_sent`` / ``bytes_recv``: per-line transfer-size jitter via
+     ``rng.randint(64, 65535)`` (TCP MSS lower bound, IPv4 max upper).
+   - ``protocol``: weighted choice — TCP dominates (90%), UDP 10%.
+
+   Anti-hallucination: fewer than two distinct ``host:port`` entries
+   in the catalog produces empty output (we need a src and dst that
+   are not the same entry).
+#}
+from datetime import datetime, timedelta, timezone
+
+endpoints = list(entities_digest.get("networks_and_ports", []))
+if len(endpoints) < 2:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+protocol_pool = ("TCP",) * 9 + ("UDP",)
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    src = rng.choice(endpoints)
+    dst = rng.choice(endpoints)
+    while dst == src:
+        dst = rng.choice(endpoints)
+    bytes_sent = rng.randint(64, 65535)
+    bytes_recv = rng.randint(64, 65535)
+    protocol = rng.choice(protocol_pool)
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"{src} -> {dst} {bytes_sent} {bytes_recv} {protocol}"
+    )
+return "\n".join(lines) + "\n"

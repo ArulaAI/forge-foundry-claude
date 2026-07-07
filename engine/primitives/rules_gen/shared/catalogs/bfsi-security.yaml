@@ -1,0 +1,56 @@
+# R1 /rules-gen catalog — BFSI application security.
+#
+# Path-scoped: only loaded for files under security/, crypto/, tls/, or
+# secrets/ directories. Layers OWASP Top 10 prevention, parameterized
+# queries, secrets management, TLS hardening, and CSP guidance on top of
+# bfsi-core.
+name: bfsi-security
+description: "BFSI application security: OWASP, crypto, TLS, secrets, headers"
+version: "1.0.0"
+paths:
+  - "**/security/**"
+  - "**/crypto/**"
+  - "**/tls/**"
+  - "**/secrets/**"
+sections:
+  - heading: "OWASP Top 10 prevention"
+    rules:
+      - "Broken Access Control (A01:2021): every endpoint enforces server-side authorization on the resource ID and the action — never trust a client-side hidden field, role claim, or referer."
+      - "Cryptographic Failures (A02:2021): there is no in-house crypto — use platform-provided primitives (libsodium, BoringSSL, JDK SunJCE with named curves), never roll your own AES mode, GCM nonce scheme, or signature verification loop."
+      - "Injection (A03:2021): every value flowing into SQL, NoSQL, LDAP, OS commands, XPath, or template engines is parameterized; string interpolation into a query is a code smell that fails review."
+      - "Insecure Design (A04:2021): security requirements (rate limits, abuse detection, lockout thresholds) are part of the SPEC, not retrofitted post-launch; threat modelling is mandatory for net-new high-risk services."
+      - "Security Misconfiguration (A05:2021): production builds disable debug endpoints, stack-trace responses, default credentials, and verbose error messages; misconfigurations are caught by an automated baseline check in CI."
+      - "Vulnerable Components (A06:2021): SBOMs are generated and scanned every build; CVEs at CVSS ≥ 7 in any dependency block release until patched or formally accepted with a documented compensating control."
+      - "Server-Side Request Forgery (A10:2021): outbound HTTP from a server that resolves a user-supplied URL enforces an egress allowlist; metadata endpoints (169.254.169.254, link-local) are blocked at the network layer."
+
+  - heading: "Input validation and parameterized queries"
+    rules:
+      - "Validate every input against an explicit schema (Pydantic, JSON Schema, OpenAPI) at the request boundary; reject — do not sanitize — anything that fails the schema."
+      - "SQL queries use parameterized statements via the driver's bind-variable interface (`?`, `$1`, `:name`); ORM-built queries are safe by default, raw SQL must be reviewed for interpolation."
+      - "ORM `find_by_sql`, `execute`, `raw` and equivalents are forbidden with f-string / format-string / string-concat input; if you must compose dynamic SQL, build the static structure and bind only values."
+      - "Stored-procedure parameters are typed at the SP boundary too — defense in depth against a callsite that forgets to bind."
+      - "Allowlist validation beats deny-list every time: validate that an input matches the expected shape (e.g. UUID v4 regex, ISO-3166 country code, enum membership) rather than checking it doesn't contain SQL keywords."
+
+  - heading: "Secrets management"
+    rules:
+      - "No hardcoded secrets — API keys, database passwords, signing keys, encryption keys live in a managed secrets store (AWS Secrets Manager, Azure Key Vault, HashiCorp Vault, GCP Secret Manager) and are fetched at runtime."
+      - "Pre-commit hooks (gitleaks, trufflehog, detect-secrets) run on every PR; the hook is mandatory, not opt-in."
+      - "Environment variables holding secrets are scoped to the runtime container, never baked into a Docker image layer or a build artifact (image scanners catch this; lockfile review catches it too)."
+      - "Secret rotation is automated and observable: the rotation pipeline emits a metric per secret rotated, and an alarm fires when a secret's age exceeds the per-class policy."
+      - "When a secret is suspected leaked, treat detection time as t=0: rotate immediately, then forensic-analyze; do not wait for forensic confirmation before rotation."
+
+  - heading: "TLS 1.2+ enforcement and certificate pinning"
+    rules:
+      - "TLS 1.2 is the minimum; TLS 1.3 is preferred. SSLv2, SSLv3, TLS 1.0, TLS 1.1 are disabled at the server and rejected at the client."
+      - "Cipher suite allowlist excludes RC4, 3DES, MD5, EXPORT-grade, anonymous-DH, and any suite without forward secrecy; AEAD suites (AES-GCM, ChaCha20-Poly1305) are preferred."
+      - "Hostname verification is enabled on every TLS client (the default in modern stacks — disabling it is the most-common TLS misuse in BFSI codebases)."
+      - "Certificate validation chains to the OS / runtime trust store; custom CA bundles are documented in the runbook and rotated on a tracked schedule."
+      - "Mobile and high-value clients pin to the issuing CA's intermediate certificate (not the leaf, which rotates every 90 days); pinning includes a backup pin and a documented unpinning procedure for incident response."
+
+  - heading: "Security response headers and CSP"
+    rules:
+      - "Set `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` and enroll the apex domain in the HSTS preload list for any internet-facing BFSI service."
+      - "Content-Security-Policy uses nonces or hashes for inline scripts and styles; `unsafe-inline` and `unsafe-eval` are forbidden in production unless documented in the threat model with a compensating control."
+      - "`X-Frame-Options: DENY` (or CSP `frame-ancestors 'none'`) on every authenticated page to defeat UI redress / clickjacking."
+      - "`X-Content-Type-Options: nosniff` is always set; MIME sniffing has been an exploitation primitive across every browser generation."
+      - "`Referrer-Policy: strict-origin-when-cross-origin` (or stricter) keeps sensitive URL paths out of third-party referer logs; `Permissions-Policy` denies unused capabilities (camera, microphone, geolocation, payment) by default."

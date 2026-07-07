@@ -1,0 +1,95 @@
+{# M6 /mod-synth-logs Phase C — upstream_requests renderer body (M6-TEMPLATE-3 / #471).
+
+   Renders the body of ``_render_upstream_requests()``. Inbound terminal
+   traffic / IBM 3270 sessions / TN3270E handshakes (BankDemo reference
+   ``synth-logs-generate.md`` §"LOG FILE 7"). Emitted as JSON Lines so a
+   downstream log shipper can parse without a custom regex.
+
+   Output line shape (one JSON object per line, sort_keys=True):
+
+       {"direction": "inbound",
+        "duration_ms": <int>,
+        "source_ip": "<from entities_digest.networks_and_ports, host part>",
+        "source_type": "terminal|batch|escwa_api",
+        "terminal_id": "T<NNN:03d>" | null,
+        "timestamp": "<ISO-8601 UTC>",
+        "transaction": "<from entities_digest.transactions>" | null}
+
+   - ``source_type``: weighted choice — terminal 65% (TN3270E bank-teller
+     sessions), batch 25% (overnight JCL), escwa_api 10% (admin /
+     monitoring).
+   - ``terminal_id``: ``T{NNN:03d}`` (closed pool of 200) only for
+     ``terminal`` source-type; ``null`` for the others. Reflects the
+     IBM 3270 session model where every terminal gets a fixed ID.
+   - ``source_ip``: drawn from ``entities_digest["networks_and_ports"]``
+     by splitting on the last ``:`` (each entry is a canonical
+     ``host:port`` literal — see the network template for the same
+     parser contract). When the catalog is empty the field falls back
+     to ``0.0.0.0`` so the JSON shape stays well-formed.
+   - ``transaction``: drawn from ``entities_digest["transactions"]`` for
+     ``terminal`` source-type (a bank teller fires a transaction);
+     ``null`` for batch / escwa_api.
+   - ``duration_ms``: ``rng.randint(10, 800)``: terminal screens are
+     human-paced, batch initiators are millisecond-fast, ESCWA polls
+     somewhere in between. Coarse-grained intentionally — the spec
+     range matters more than the per-source-type distribution.
+
+   Anti-hallucination: empty transactions list forces every line to
+   ``source_type=batch`` or ``escwa_api`` (no terminal lines, since
+   those need a transaction); empty ``networks_and_ports`` falls back
+   to ``0.0.0.0`` for ``source_ip``. Both fully empty produces empty
+   output.
+#}
+import json
+from datetime import datetime, timedelta, timezone
+
+transactions = list(entities_digest.get("transactions", []))
+endpoints = list(entities_digest.get("networks_and_ports", []))
+if not transactions and not endpoints:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+if transactions:
+    source_type_pool = (
+        ("terminal",) * 13 + ("batch",) * 5 + ("escwa_api",) * 2
+    )
+else:
+    source_type_pool = (("batch",) * 5 + ("escwa_api",) * 2)
+
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    source_type = rng.choice(source_type_pool)
+    if endpoints:
+        endpoint = rng.choice(endpoints)
+        # Split on the last colon so IPv4 "host:port" canonical entries
+        # produce the host part as source_ip.
+        source_ip = endpoint.rsplit(":", 1)[0]
+    else:
+        source_ip = "0.0.0.0"
+    if source_type == "terminal":
+        terminal_id: str | None = f"T{rng.randint(1, 200):03d}"
+        transaction: str | None = rng.choice(transactions)
+    else:
+        terminal_id = None
+        transaction = None
+    duration_ms = rng.randint(10, 800)
+    record = {
+        "direction": "inbound",
+        "duration_ms": duration_ms,
+        "source_ip": source_ip,
+        "source_type": source_type,
+        "terminal_id": terminal_id,
+        "timestamp": ts.replace(tzinfo=timezone.utc).isoformat(),
+        "transaction": transaction,
+    }
+    lines.append(json.dumps(record, sort_keys=True))
+return "\n".join(lines) + "\n"

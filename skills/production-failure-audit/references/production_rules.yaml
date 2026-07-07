@@ -1,0 +1,159 @@
+# Vendored from forge-foundry-primitives@v0.5.0 — production rules for FM6-FM10.
+# Schema matches C10's failure_mode_rules.yaml: per-mode detector blocks.
+
+fm6_stale_pattern:
+  name: Stale-pattern hallucination
+  description: Outdated framework idioms when project is on newer version.
+  detectors:
+    - kind: pydantic-v1-idioms
+      patterns:
+        - regex: "@validator\\("
+          severity: medium
+          file_patterns:
+            - '*.py'
+          msg: "@validator decorator is Pydantic v1; v2 uses @field_validator"
+          cwe_id: "CWE-1104"
+        - regex: "orm_mode\\s*=\\s*True"
+          severity: medium
+          file_patterns:
+            - '*.py'
+          msg: "orm_mode=True is Pydantic v1; v2 uses from_attributes=True"
+          cwe_id: "CWE-1104"
+    - kind: spring-boot-v2-idioms
+      patterns:
+        - regex: "javax\\.persistence\\."
+          severity: medium
+          file_patterns:
+            - '*.java'
+          msg: "javax.persistence is Spring Boot 2; Boot 3 uses jakarta.persistence"
+          cwe_id: "CWE-1104"
+    - kind: aws-sdk-v1-imports
+      patterns:
+        - regex: "^import\\s+com\\.amazonaws\\."
+          severity: medium
+          file_patterns:
+            - '*.java'
+          msg: "AWS SDK for Java v1 (com.amazonaws) — v2 uses software.amazon.awssdk"
+          cwe_id: "CWE-1104"
+    - kind: react-class-components
+      patterns:
+        - regex: "class\\s+\\w+\\s+extends\\s+React\\.Component"
+          severity: low
+          file_patterns:
+            - '*.js'
+            - '*.jsx'
+            - '*.ts'
+            - '*.tsx'
+          msg: "React class component — hooks-style is preferred in modern React"
+          cwe_id: "CWE-1104"
+    - kind: python2-idioms
+      patterns:
+        - regex: "from\\s+__future__\\s+import\\s+print_function"
+          severity: low
+          file_patterns:
+            - '*.py'
+          msg: "Python 2 compat import; unnecessary in Python 3"
+          cwe_id: "CWE-1104"
+    - kind: openapi-v2-swagger
+      patterns:
+        - regex: "swagger\\s*:\\s*[\"']?2\\.0"
+          severity: medium
+          file_patterns:
+            - '*.yaml'
+            - '*.yml'
+            - '*.json'
+          msg: "OpenAPI 2.0 (Swagger) detected — upgrade to OpenAPI 3.x; Swagger 2.0 is deprecated and lacks modern security/schema features"
+          cwe_id: "CWE-1104"
+
+fm7_overgeneralization:
+  name: Overgeneralization
+  description: Generic patterns applied where domain requires specific.
+  detectors:
+    - kind: bcrypt-in-pci-context
+      patterns:
+        - regex: "bcrypt\\.(hashpw|gensalt)\\("
+          severity: medium
+          file_patterns:
+            - '*.py'
+          msg: "bcrypt in payments context — PCI mandates FIPS-certified KDF (PBKDF2/scrypt with HSM)"
+          cwe_id: "CWE-327"
+    - kind: fernet-in-pan-context
+      patterns:
+        - regex: "cryptography\\.fernet\\.Fernet"
+          severity: high
+          file_patterns:
+            - '*.py'
+          msg: "Fernet (AES-128-CBC + HMAC) — PCI prohibits direct PAN encryption; use tokenization"
+          cwe_id: "CWE-327"
+    - kind: verify-false-in-fintech
+      patterns:
+        - regex: "verify\\s*=\\s*False"
+          severity: high
+          file_patterns:
+            - '*.py'
+            - '*.ts'
+            - '*.js'
+          msg: "TLS verification disabled — never appropriate for financial-services traffic"
+          cwe_id: "CWE-295"
+
+fm8_compliance_blindness:
+  name: Compliance blindness
+  description: Code that violates known regulatory patterns (PCI/GDPR/SOX).
+  detectors:
+    - kind: pan-in-schema
+      patterns:
+        - regex: "CREATE\\s+TABLE[^;]*\\bpan\\s+(VAR)?CHAR\\(\\s*(16|19)\\s*\\)"
+          severity: critical
+          file_patterns:
+            - '*.sql'
+            - '*.py'
+          msg: "PAN column in DB schema — PCI-DSS prohibits plain storage; tokenize"
+          cwe_id: "CWE-311"
+    - kind: pan-in-logger
+      patterns:
+        - regex: "(?:logger|log|print)(?:\\.[a-z]+)?\\s*\\(\\s*[^)]*\\bpan\\b"
+          severity: critical
+          file_patterns:
+            - '*.py'
+            - '*.ts'
+            - '*.java'
+          msg: "PAN logged in plain text — PCI prohibits; redact or use masked form"
+          cwe_id: "CWE-359"
+    - kind: pii-without-retention
+      patterns:
+        - regex: "email\\s*=\\s*Column\\(String"
+          severity: medium
+          file_patterns:
+            - '*.py'
+          msg: "PII column without retention marker — GDPR Art.5(1)(e) requires retention policy"
+          cwe_id: "CWE-359"
+
+fm9_test_theater:
+  name: Test-coverage theater
+  description: Tests that pass but don't exercise behavior.
+  detectors:
+    - kind: assert-true-tautology
+      patterns:
+        - regex: "^\\s*assert\\s+True\\s*(\\s*#.*)?$"
+          severity: high
+          file_patterns:
+            - '*.py'
+          msg: "assert True is a tautology; does not exercise any behavior"
+          cwe_id: "CWE-1100"
+        - regex: "^\\s*assert\\s+1\\s*==\\s*1\\s*(\\s*#.*)?$"
+          severity: high
+          file_patterns:
+            - '*.py'
+          msg: "assert 1 == 1 is a tautology"
+          cwe_id: "CWE-1100"
+        - regex: "^\\s*assert\\s+not\\s+False\\s*(\\s*#.*)?$"
+          severity: high
+          file_patterns:
+            - '*.py'
+          msg: "assert not False is a tautology"
+          cwe_id: "CWE-1100"
+
+fm10_arch_decay:
+  name: Architectural decay
+  description: Layer-boundary or cycle violations.
+  detectors: []

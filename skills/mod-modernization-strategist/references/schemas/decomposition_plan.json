@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "Antipattern": {
+      "additionalProperties": false,
+      "description": "A single detected anti-pattern (Stage D output).\n\n``kind`` is closed: the four shipped detectors cover cross-context\nFKs, distributed transactions, view-of-views chains, and SPs that\nspan detected contexts. New kinds require an explicit Literal edit\n+ a matching detector module so the surface stays auditable.\n\n``affected_objects`` lists the qualified names (table / view / SP)\nthat participate in the anti-pattern. ``mitigation`` is a short\nhuman-readable suggestion; the substantive mitigation discussion\nlives in the narrative produced by Stage E.",
+      "properties": {
+        "affected_objects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Objects",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "cross_context_fk",
+            "distributed_transaction",
+            "view_of_views",
+            "sp_spans_contexts"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mitigation": {
+          "title": "Mitigation",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "mitigation"
+      ],
+      "title": "Antipattern",
+      "type": "object"
+    },
+    "BoundedContext": {
+      "additionalProperties": false,
+      "description": "A named context grouping one or more proposed services.\n\n``lob_classification`` is the line-of-business label inherited from\nthe M1 LoB classifier (see ``primitives.db_schema_analyze.Table.\nlob_classification``); it is free-form on purpose so consumer\nschemas can carry domain-specific labels without forcing a Literal\nedit per project.",
+      "properties": {
+        "lob_classification": {
+          "title": "Lob Classification",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/Service"
+          },
+          "title": "Services",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "lob_classification"
+      ],
+      "title": "BoundedContext",
+      "type": "object"
+    },
+    "OwnershipReport": {
+      "additionalProperties": false,
+      "description": "Per-table ownership map \u2014 Stage B output.\n\nA table is \"shared\" when more than one service writes to it. The\ndesign spec calls these out as the primary migration blockers, so\nthe M3 narrative leads with this section. ``owners_per_table`` is\nkeyed by the qualified table name (``\"<schema>.<table>\"``) and maps\nto the writer service names; tables present in ``shared_tables``\nmust also appear in ``owners_per_table`` with >= 2 entries.",
+      "properties": {
+        "owners_per_table": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Owners Per Table",
+          "type": "object"
+        },
+        "shared_tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Shared Tables",
+          "type": "array"
+        }
+      },
+      "title": "OwnershipReport",
+      "type": "object"
+    },
+    "SequencingPlan": {
+      "additionalProperties": false,
+      "description": "Strangler-fig extraction order (Stage C output).\n\n``extract_order`` is the ordered list of service names the sequencer\nrecommends extracting from the legacy monolith (lower index =\nearlier). ``deferred`` is services Stage C identified as\nextractable but parked behind a constraint (team capacity, a\nshared-table blocker, etc.). ``never_extract`` is services Stage C\nbelieves should stay inside the legacy monolith (very high coupling,\ncritical-path latency, etc.). ``rationale`` is a short paragraph\nexplaining the ordering \u2014 the substantive narrative lives in the\nStage E ``modernization-plan.md``.",
+      "properties": {
+        "deferred": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deferred",
+          "type": "array"
+        },
+        "extract_order": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Extract Order",
+          "type": "array"
+        },
+        "never_extract": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Never Extract",
+          "type": "array"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rationale"
+      ],
+      "title": "SequencingPlan",
+      "type": "object"
+    },
+    "Service": {
+      "additionalProperties": false,
+      "description": "A single proposed service within a bounded context.\n\n``owned_tables`` and ``owned_sps`` are the M1 / M2 inventory names\nStage B's ownership analyser assigned to this service.\n``dependencies`` lists peer service names this service calls or\nreads from (directional). ``cohesion_score`` and ``coupling_score``\nare unit-interval floats (Stage A / B computed) intended to be\nsorted on \u2014 high cohesion / low coupling is the goal of the\ndecomposition.",
+      "properties": {
+        "cohesion_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Cohesion Score",
+          "type": "number"
+        },
+        "coupling_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Coupling Score",
+          "type": "number"
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependencies",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "owned_sps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Owned Sps",
+          "type": "array"
+        },
+        "owned_tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Owned Tables",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "cohesion_score",
+        "coupling_score"
+      ],
+      "title": "Service",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level plan produced by the M3 pipeline.\n\nSchema-versioned so downstream primitives (M4, C7) can refuse a\nmismatched output (design spec \u00a7\"File contract\" rule).\n``target_paradigm`` is a closed Literal \u2014 the three shipped\nparadigms are the only sequencer / diagram-renderer code paths.\n\nGemini subset (issue #548 / SPEC \u00a76.3 + \u00a77.2): persisted M3 artefact,\nnot an LLM ``response_format`` schema. Pydantic emits ``$ref`` chains\nfor the nested ``BoundedContext``/``Service``/``OwnershipReport``\ngraph + ``additionalProperties: <schema>`` for ``OwnershipReport.\nowners_per_table`` \u2014 both exceed Gemini's subset. Decorated with\n``@accepts_extended_schema`` because the plan is written to disk\nfor downstream M4 / C7 consumption, not sent through harness\nstructured-output mode.",
+  "properties": {
+    "antipatterns": {
+      "items": {
+        "$ref": "#/$defs/Antipattern"
+      },
+      "title": "Antipatterns",
+      "type": "array"
+    },
+    "contexts": {
+      "items": {
+        "$ref": "#/$defs/BoundedContext"
+      },
+      "title": "Contexts",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "ownership": {
+      "$ref": "#/$defs/OwnershipReport"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sequencing": {
+      "$ref": "#/$defs/SequencingPlan"
+    },
+    "target_paradigm": {
+      "enum": [
+        "microservices",
+        "modular_monolith",
+        "batch_platform"
+      ],
+      "title": "Target Paradigm",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target_paradigm",
+    "ownership",
+    "sequencing"
+  ],
+  "title": "DecompositionPlan",
+  "type": "object"
+}

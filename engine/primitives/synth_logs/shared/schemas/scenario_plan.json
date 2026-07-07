@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "IncidentEvent": {
+      "additionalProperties": false,
+      "description": "A single scheduled event on the Phase B 72-hour timeline.\n\n``event_kind`` is the closed Literal that drives template selection\nin Phase C; ``timestamp`` pins the event onto the deterministic\ntimeline (UTC). ``affected_programs`` and ``cascade_targets`` are\ndrawn from the Phase A ``EntitiesDigest.programs`` set \u2014\nPhase B's anti-hallucination guard (design spec \u00a7\"Anti-hallucination\"\nlayer 2). ``expected_log_correlations`` lists the ``LogFormat`` values\nin which Phase D expects to find this event's task IDs cross-referenced\n(e.g. a ``vsam_contention`` root cause should appear in\n``cics_transaction``, ``database``, and ``cics_queues``).",
+      "properties": {
+        "affected_programs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Programs",
+          "type": "array"
+        },
+        "cascade_targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cascade Targets",
+          "type": "array"
+        },
+        "event_kind": {
+          "enum": [
+            "vsam_contention",
+            "cics_abend",
+            "batch_overrun",
+            "network_drop",
+            "recovery"
+          ],
+          "title": "Event Kind",
+          "type": "string"
+        },
+        "expected_log_correlations": {
+          "items": {
+            "enum": [
+              "cics_transaction",
+              "cics_access",
+              "network",
+              "database",
+              "enterprise_server",
+              "downstream_calls",
+              "upstream_requests",
+              "cics_queues",
+              "metrics",
+              "security_audit"
+            ],
+            "type": "string"
+          },
+          "title": "Expected Log Correlations",
+          "type": "array"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_kind",
+        "timestamp"
+      ],
+      "title": "IncidentEvent",
+      "type": "object"
+    },
+    "LogFileSpec": {
+      "additionalProperties": false,
+      "description": "Per-log-file metadata Phase B emits for every one of the ten\nformats. The Phase C generator (``shared/generate.py`` +\n``shared/templates/log_*.j2``) reads these specs to bake the line\ncount, target path, and time window into ``generate_logs.py``.\n\n``entries_count`` is the *floor* per design spec \u00a7\"Output contract\" \u2014\n``--scale large`` will multiply it. ``time_range_start`` and\n``time_range_end`` together define the 72-hour (default) window each\nlog file must fully cover (Phase D's ``timeline_consistency`` rule).",
+      "properties": {
+        "entries_count": {
+          "minimum": 0,
+          "title": "Entries Count",
+          "type": "integer"
+        },
+        "file_name": {
+          "title": "File Name",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "cics_transaction",
+            "cics_access",
+            "network",
+            "database",
+            "enterprise_server",
+            "downstream_calls",
+            "upstream_requests",
+            "cics_queues",
+            "metrics",
+            "security_audit"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "target_path": {
+          "title": "Target Path",
+          "type": "string"
+        },
+        "time_range_end": {
+          "format": "date-time",
+          "title": "Time Range End",
+          "type": "string"
+        },
+        "time_range_start": {
+          "format": "date-time",
+          "title": "Time Range Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_name",
+        "format",
+        "target_path",
+        "entries_count",
+        "time_range_start",
+        "time_range_end"
+      ],
+      "title": "LogFileSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The deterministic 72-hour plan Phase B emits as ``scenario.json``.\n\n``scenario`` records which narrative arc was synthesised (the input\nflag); ``seed`` lets re-runs reproduce the same timeline. The\n``traffic_profile`` dict is intentionally free-form \u2014 it captures the\nper-scale traffic-mix knobs (e.g. ``{\"off_peak_txn_per_hour\": 50,\n\"peak_txn_per_hour\": 500, \"month_end_overlay_fraction\": 0.0}``) that\nfeed the per-template renderers without forcing a rigid shape on the\ncalibration in `docs/m6-scenario-calibration.md` (lands in a future\nM6 issue).\n\n``events`` is the chronologically-ordered list of Phase B\n``IncidentEvent``s; ``log_specs`` is the per-file metadata Phase C\nconsumes. ``window_start`` / ``window_end`` together pin the 72-hour\nwindow (configurable via ``--window-hours``).\n\nGemini subset (issue #548 / SPEC \u00a76.3 + \u00a77.2): persisted M6 Phase-B\nartefact, not an LLM ``response_format`` schema. The free-form\n``traffic_profile`` dict (``additionalProperties: <schema>``) plus\nthe ``$ref`` chains for nested ``IncidentEvent`` / ``LogFileSpec``\nexceed Gemini's accepted subset. Decorated with\n``@accepts_extended_schema`` because Phase B writes ``scenario.json``\ndeterministically to disk for Phase C consumption \u2014 Phase B does\nnot invoke an LLM with this schema as the structured-output target.",
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/$defs/IncidentEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "log_specs": {
+      "items": {
+        "$ref": "#/$defs/LogFileSpec"
+      },
+      "title": "Log Specs",
+      "type": "array"
+    },
+    "scenario": {
+      "enum": [
+        "baseline",
+        "peak",
+        "incident"
+      ],
+      "title": "Scenario",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "traffic_profile": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Traffic Profile",
+      "type": "object"
+    },
+    "window_end": {
+      "format": "date-time",
+      "title": "Window End",
+      "type": "string"
+    },
+    "window_start": {
+      "format": "date-time",
+      "title": "Window Start",
+      "type": "string"
+    }
+  },
+  "required": [
+    "scenario",
+    "seed",
+    "window_start",
+    "window_end"
+  ],
+  "title": "ScenarioPlan",
+  "type": "object"
+}

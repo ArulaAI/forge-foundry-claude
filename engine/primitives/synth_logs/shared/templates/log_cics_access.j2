@@ -1,0 +1,49 @@
+{# M6 /mod-synth-logs Phase C — cics_access renderer body (M6-TEMPLATE-2 / #470).
+
+   Renders the body of ``_render_cics_access()``. Output line shape
+   (per issue #470 acceptance):
+
+       <timestamp> <program_name> <vsam_file> <mode READ|WRITE|REWRITE|DELETE> <record_count> <duration_us>
+
+   - ``program_name``: drawn from ``entities_digest["programs"]``.
+   - ``vsam_file``: drawn from ``entities_digest["files"]``.
+   - ``mode``: weighted choice — READ dominates (70%), WRITE 15%,
+     REWRITE 10%, DELETE 5% — reflecting typical CICS file-access mix.
+   - ``record_count``: ``rng.randint(1, 50)`` per access op.
+   - ``duration_us``: microsecond-resolution VSAM op latency in the
+     ``rng.randint(100, 5000)`` range (sub-millisecond mostly).
+
+   Anti-hallucination guard: empty programs or files lists produce
+   empty output. Every name reaches the rendered log only via the
+   ``entities_digest`` catalog.
+#}
+from datetime import datetime, timedelta, timezone
+
+programs = list(entities_digest.get("programs", []))
+files = list(entities_digest.get("files", []))
+if not programs or not files:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+mode_pool = ("READ",) * 14 + ("WRITE",) * 3 + ("REWRITE",) * 2 + ("DELETE",)
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    program = rng.choice(programs)
+    vsam_file = rng.choice(files)
+    mode = rng.choice(mode_pool)
+    record_count = rng.randint(1, 50)
+    duration_us = rng.randint(100, 5000)
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"{program} {vsam_file} {mode} {record_count} {duration_us}"
+    )
+return "\n".join(lines) + "\n"

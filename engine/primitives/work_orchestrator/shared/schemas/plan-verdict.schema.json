@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-orchestrator-plan-verdict",
+  "title": "C7 plan-stage decomposition verdict",
+  "description": "The plan stage's structured output: C2 /planner's decomposition verdict (spec §3.1, §5.2; mirrors the planner's own decomposition-verdict schema, #967) that drives C7's split-vs-build decision. 'atomic' makes the node a build leaf; 'split' carves one child node per independent unit and the parent waits on them.",
+  "type": "object",
+  "required": ["decomposition"],
+  "additionalProperties": false,
+  "properties": {
+    "decomposition": {
+      "type": "string",
+      "enum": ["atomic", "split"],
+      "description": "atomic = a single independent deliverable (this node becomes a build leaf). split = more than one independent unit; emit children[]."
+    },
+    "plan_path": {
+      "type": "string",
+      "description": "Filesystem path to the C2-rendered plan for this node. Present (and used by the code-gen stage) when decomposition is atomic; absent/ignored when split."
+    },
+    "children": {
+      "type": "array",
+      "description": "Required when decomposition is 'split'. One descriptor per independent child work unit, in build order.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "spec_seed", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short human-readable title for the child work unit."
+          },
+          "spec_seed": {
+            "type": "string",
+            "description": "Brief spec-seed (goal + scope) that C1 /spec-write expands into the child's full spec."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why this is an independent unit and how it relates to the parent goal."
+          }
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": { "decomposition": { "const": "split" } }
+  },
+  "then": {
+    "required": ["children"]
+  }
+}

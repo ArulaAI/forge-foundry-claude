@@ -1,0 +1,57 @@
+# R1 /rules-gen catalog — React 19+ application code.
+#
+# Path-scoped: loaded for all .tsx / .jsx files. Targets the React 19
+# release surface (Actions, useFormStatus, useOptimistic, server
+# components, React Compiler, useTransition), the modern data-fetching
+# stack (TanStack Query, SWR, RSC), and the canonical lint/test
+# toolchain (ESLint, Prettier, Vitest, Testing Library, Playwright).
+name: react
+description: "React 19+ hooks, server components, Actions, and testing"
+version: "1.0.0"
+paths:
+  - "**/*.tsx"
+  - "**/*.jsx"
+sections:
+  - heading: "React 19+ hooks, Actions, and form patterns"
+    rules:
+      - "Use the new `use()` hook (React 19) to read context and unwrap promises inside Suspense boundaries; it works inside conditionals and replaces ergonomically-awkward `useContext()` chains."
+      - "Forms use Actions — pass a function to `<form action={...}>` and read state with `useFormStatus()` / `useFormState()`; legacy `onSubmit` + `preventDefault()` boilerplate is grandfathered only."
+      - "Optimistic UI uses `useOptimistic()` to render the predicted state immediately while the Action runs; manual `useState` + rollback in `catch` is the pre-React-19 pattern."
+      - "`useTransition()` wraps non-urgent state updates so the UI stays responsive during long renders; pair with `startTransition()` for imperative call sites."
+      - "Refs are first-class: `ref` is a regular prop in React 19 (no more `forwardRef` wrapper); old `forwardRef` is grandfathered."
+      - "The React Compiler (Forget) eliminates most manual `useMemo` / `useCallback` / `React.memo` boilerplate when enabled in `babel-plugin-react-compiler`; do NOT pre-emptively memoize — only memoize after a profiler shows a hotspot."
+
+  - heading: "Server components and data fetching"
+    rules:
+      - "Default to React Server Components (RSC) where the framework supports them (Next.js App Router, Remix v2+, Waku) — only mark a component `\"use client\"` when it needs state, effects, or browser-only APIs."
+      - "RSC fetch directly with `async/await` at the component level; do NOT call client-side data-fetching hooks from RSC (they will fail to compile)."
+      - "Client-side data fetching uses TanStack Query (React Query) v5 or SWR; avoid bare `useEffect(() => fetch(...))` — it lacks deduplication, caching, retry, and SSR hydration."
+      - "Mutations via TanStack Query's `useMutation` integrate with the query cache (`invalidateQueries`) and pair with `useOptimistic()` cleanly; manual cache invalidation is bug-prone."
+      - "Suspense boundaries are mandatory around async children; without a boundary the closest error boundary catches the thrown promise, which masks the real error."
+
+  - heading: "Component composition and TypeScript patterns"
+    rules:
+      - "Function components only — class components are grandfathered and have no React 19 features (no Actions, no `use()`, no compiler support)."
+      - "Type props with `interface ComponentNameProps` (not `type`); interfaces extend cleanly and produce better intellisense for consumers."
+      - "Discriminated unions for variant props (`type ButtonProps = { variant: 'primary'; … } | { variant: 'icon'; … }`) — never optional booleans that could combine into impossible states."
+      - "Avoid `React.FC<P>` — it implicitly adds `children`, blocks default-prop inference, and the React team has stopped recommending it."
+      - "Children typed as `React.ReactNode` (not `JSX.Element` or `ReactChild`); `ReactNode` is the most permissive correct type."
+      - "Event handler props end in `on…` (DOM convention) and the handler types come from React's synthetic-event generics (`MouseEvent<HTMLButtonElement>`, not raw DOM `MouseEvent`)."
+
+  - heading: "State management"
+    rules:
+      - "Local component state uses `useState` / `useReducer`; lift state only when more than one component needs it (the React docs principle still holds)."
+      - "Cross-cutting state uses Zustand, Jotai, or Redux Toolkit — `useContext` for state mutations causes whole-tree re-renders unless wrapped in `useMemo`/`useReducer` carefully, which Zustand/Jotai do for you."
+      - "URL is state: synchronize filters, pagination, and tabs with the URL via `useSearchParams` (Next/Remix router) — never duplicate that state in local component state."
+      - "Form state lives in React Hook Form (recommended) or Formik (grandfathered); do NOT roll your own `useState` per field for non-trivial forms — uncontrolled re-renders kill performance."
+      - "Avoid Redux for app state in greenfield projects unless you specifically need time-travel debugging, middleware ecosystems, or strict serializability — Redux Toolkit reduces boilerplate but the ecosystem cost remains."
+
+  - heading: "Build, lint, and testing"
+    rules:
+      - "Vite is the recommended dev server / bundler for SPAs; Next.js / Remix / Waku for SSR / RSC. Create React App is EOL — do not start new projects on CRA."
+      - "ESLint with `eslint-plugin-react`, `eslint-plugin-react-hooks`, and `eslint-plugin-jsx-a11y`; the rules-of-hooks lint rule is mandatory — it catches conditional `useState` that would crash at runtime."
+      - "Format with Prettier; do not configure ESLint formatting rules (let Prettier own that — running both on the same concern is a known source of CI thrash)."
+      - "Unit test with Vitest (Vite-native, ESM-first) or Jest (Next/CRA legacy); pair with `@testing-library/react` and `@testing-library/user-event`."
+      - "Test from the user's perspective: query by role / label / text (Testing Library philosophy) — never `data-testid` except as a documented last resort for ambiguous nodes."
+      - "End-to-end testing uses Playwright (recommended) or Cypress; Playwright's network-mocking and parallel-execution model wins for CI-time and flakiness."
+      - "TypeScript strict mode (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) is on; CI fails on relaxed compiler options."

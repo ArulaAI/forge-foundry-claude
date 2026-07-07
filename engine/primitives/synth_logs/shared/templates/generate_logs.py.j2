@@ -1,0 +1,231 @@
+{# M6 /mod-synth-logs Phase C — generate_logs.py skeleton template.
+
+   Renders a standalone Python script the consumer commits to their repo
+   root (default ``./generate_logs.py``). The rendered script imports
+   stdlib only, bakes the ScenarioPlan + EntitiesDigest into module-level
+   constants, and dispatches one ``_render_<format>()`` per ``LogFileSpec``.
+
+   The ``_render_<format>()`` helpers fall into two buckets:
+
+   1. *Implemented* (the per-format body comes in via the
+      ``rendered_bodies`` context dict, keyed by format) — the body
+      Jinja-templates are listed in ``render.py::_FORMAT_BODY_TEMPLATES``
+      and rendered to Python source by ``_render_<format>()`` helpers
+      there. Each body imports ``datetime`` lazily (function-local) so
+      the outer skeleton's stdlib-only import contract still holds when
+      ``ast.walk`` inspects top-level imports.
+   2. *Stub* (the format is not in ``rendered_bodies``) — emits the
+      canonical ``NotImplementedError`` pointing at the follow-up issue
+      per format. The dispatcher loop catches ``NotImplementedError``
+      and keeps going so a half-landed M6 still runs end-to-end:
+
+      - #470 (M6-TEMPLATE-2): cics_transaction, cics_access, network, database
+      - #471 (M6-TEMPLATE-3): enterprise_server, downstream_calls, upstream_requests, cics_queues
+      - #472 (M6-TEMPLATE-4): metrics, security_audit
+
+   The script is deterministic given ``--seed``: a single ``random.Random``
+   instance seeded from ``--seed`` (or, if absent, ``SEED`` baked at
+   render time) drives every renderer. Per-file jitter is derived from
+   this RNG so re-running the script with the same seed reproduces the
+   identical byte stream.
+
+   Context variables (provided by ``_render_template()`` in
+   ``primitives/synth_logs/shared/render.py``):
+
+   - ``scenario_plan_json`` (str) — JSON-encoded ScenarioPlan
+   - ``entities_digest_json`` (str) — JSON-encoded EntitiesDigest
+   - ``seed`` (int) — deterministic seed baked at render time
+   - ``log_specs`` (list[dict]) — per-file specs flattened for the loop
+   - ``format_to_issue`` (dict[str, str]) — LogFormat → GH issue label
+     (e.g. ``"cics_transaction"`` → ``"#470 (M6-TEMPLATE-2)"``)
+   - ``rendered_bodies`` (dict[str, str]) — LogFormat → indented Python
+     source string for the ``_render_<format>()`` body. Only the formats
+     wired by the currently-merged M6-TEMPLATE-* PRs appear here; the
+     rest fall back to the ``NotImplementedError`` stub.
+   - ``generated_at`` (str) — ISO-8601 timestamp baked into the header
+#}
+#!/usr/bin/env python3
+"""Synthetic mainframe log generator — emitted by M6 /mod-synth-logs Phase C.
+
+Generated at: {{ generated_at }}
+Seed (default): {{ seed }}
+
+This file is committed to the consumer repository so re-generation is
+reproducible: a fresh checkout + ``python generate_logs.py --seed {{ seed }}``
+reproduces the identical byte stream that was first committed.
+
+Stdlib only. No third-party imports. The Pydantic models that produced
+``SCENARIO_PLAN`` / ``ENTITIES_DIGEST`` live in the foundry library
+(``primitives/synth_logs/shared/models.py``); the consumer does NOT need
+foundry installed at runtime — only at re-generation time, and only if
+they choose to re-derive the plan rather than re-run this baked copy.
+
+Per-format ``_render_<format>()`` helpers are stubs in this revision
+(M6-TEMPLATE-1 / #469). Each follow-up issue flips one or more formats
+on:
+
+- #470 (M6-TEMPLATE-2): cics_transaction, cics_access, network, database
+- #471 (M6-TEMPLATE-3): enterprise_server, downstream_calls, upstream_requests, cics_queues
+- #472 (M6-TEMPLATE-4): metrics, security_audit
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import sys
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Baked configuration — produced at template render time by
+# primitives/synth_logs/shared/render.py::_render_template().
+# ---------------------------------------------------------------------------
+
+SCENARIO_PLAN: dict = json.loads(
+    {{ scenario_plan_json | tojson }}
+)
+"""ScenarioPlan baked at render time. Round-trips through
+``json.loads`` so the literal in this file is a JSON string the renderer
+controls — not a Python dict literal that would be vulnerable to render
+template injection."""
+
+ENTITIES_DIGEST: dict = json.loads(
+    {{ entities_digest_json | tojson }}
+)
+"""EntitiesDigest baked at render time. Same JSON round-trip rationale
+as ``SCENARIO_PLAN``."""
+
+SEED: int = {{ seed }}
+"""Default seed baked at render time. ``--seed`` on the command line
+wins when provided."""
+
+LOG_SPECS: list[dict] = json.loads(
+    {{ log_specs_json | tojson }}
+)
+"""Per-file metadata flattened from ``SCENARIO_PLAN['log_specs']``. The
+dispatch loop in ``main()`` iterates this list and calls the matching
+``_render_<format>()`` helper per spec."""
+
+
+# ---------------------------------------------------------------------------
+# Per-format renderer stubs.
+#
+# Each stub raises ``NotImplementedError`` pointing at the GH issue that
+# implements it. The dispatch loop below catches NotImplementedError and
+# logs it to stderr but continues — this lets the script run end-to-end
+# even when some formats are still stubs, which matters for the M6 Phase C
+# integration test that runs the rendered script before #470/#471/#472
+# have all landed.
+# ---------------------------------------------------------------------------
+
+{% for fmt in log_formats %}
+def _render_{{ fmt }}(
+    spec: dict,
+    rng: random.Random,
+    scenario_plan: dict,
+    entities_digest: dict,
+) -> str:
+    """Render the ``{{ fmt }}`` log file body.
+{% if fmt in rendered_bodies %}
+    Implemented in {{ format_to_issue[fmt] }}. Returns the rendered
+    log body as a string (one line per ``\\n``-terminated entry).
+    Anti-hallucination layer 1: every entity referenced in the output
+    is sampled from ``entities_digest`` — never synthesised free-form.
+    """
+{{ rendered_bodies[fmt] }}
+{% else %}
+    Stub — implemented in {{ format_to_issue[fmt] }}.
+    """
+    raise NotImplementedError(
+        "M6 log format '{{ fmt }}' not yet implemented; tracked in "
+        "{{ format_to_issue[fmt] }}"
+    )
+{% endif %}
+
+{% endfor %}
+# ---------------------------------------------------------------------------
+# Dispatch table — maps the LogFormat literal to its renderer.
+# ---------------------------------------------------------------------------
+
+_RENDERERS = {
+{% for fmt in log_formats %}    {{ fmt | tojson }}: _render_{{ fmt }},
+{% endfor %}}
+
+
+def _per_file_rng(base_rng: random.Random, file_name: str) -> random.Random:
+    """Derive a per-file ``random.Random`` from the base RNG.
+
+    Each file gets its own RNG so adding / removing a file doesn't shift
+    the byte stream of the others. The derivation mixes the base seed
+    with a deterministic hash of the file name so the per-file streams
+    stay reproducible across runs.
+    """
+    derived_seed = base_rng.randint(0, 2**63 - 1) ^ hash(file_name)
+    return random.Random(derived_seed)  # noqa: S311 (non-crypto jitter)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Render every log file declared in ``SCENARIO_PLAN['log_specs']``.
+
+    Returns 0 if every renderer succeeded, 1 if any raised
+    ``NotImplementedError`` (the M6 incremental-implementation signal),
+    or 2 if a renderer crashed with an unexpected exception.
+    """
+    parser = argparse.ArgumentParser(
+        prog="generate_logs.py",
+        description=(
+            "Synthetic mainframe log generator (M6 /mod-synth-logs Phase C). "
+            "Emits one file per LogFileSpec in the baked ScenarioPlan."
+        ),
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("./logs"),
+        help="Destination directory for the rendered log files (default: ./logs/).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=SEED,
+        help=f"Deterministic seed (default baked: {SEED}).",
+    )
+    args = parser.parse_args(argv)
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    base_rng = random.Random(args.seed)  # noqa: S311 (non-crypto)
+
+    stub_misses = 0
+    for spec in LOG_SPECS:
+        fmt = spec["format"]
+        renderer = _RENDERERS.get(fmt)
+        if renderer is None:
+            print(
+                f"[generate_logs] unknown format {fmt!r} for {spec['file_name']!r}",
+                file=sys.stderr,
+            )
+            return 2
+        per_file_rng = _per_file_rng(base_rng, spec["file_name"])
+        try:
+            body = renderer(spec, per_file_rng, SCENARIO_PLAN, ENTITIES_DIGEST)
+        except NotImplementedError as exc:
+            print(f"[generate_logs] {spec['file_name']}: {exc}", file=sys.stderr)
+            stub_misses += 1
+            continue
+        target = args.output_dir / spec["file_name"]
+        target.write_text(body, encoding="utf-8")
+        print(f"[generate_logs] wrote {target}", file=sys.stderr)
+
+    if stub_misses:
+        print(
+            f"[generate_logs] {stub_misses} format(s) still stubbed; "
+            "see #470 / #471 / #472",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

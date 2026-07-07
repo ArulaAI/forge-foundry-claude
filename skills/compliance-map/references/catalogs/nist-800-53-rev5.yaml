@@ -1,0 +1,354 @@
+# NIST SP 800-53 Rev 5 Starter Catalog — forge-foundry compliance-map (S70)
+# Source: NIST Special Publication 800-53 Revision 5 (September 2020)
+# ~24 high-priority controls from Access Control (AC), Audit (AU),
+# Configuration Management (CM), Identification & Authentication (IA),
+# Risk Assessment (RA), System & Communications Protection (SC),
+# and System & Information Integrity (SI) families.
+framework: nist-800-53-rev5
+version: "rev5"
+released: "2020-09-23"
+controls:
+  # ---------------------------------------------------------------------------
+  # Access Control (AC)
+  # ---------------------------------------------------------------------------
+  - id: "AC-2"
+    title: "Account Management"
+    family: "access-control"
+    severity: high
+    evidence_hints:
+      - "automated account provisioning and de-provisioning tied to HR system"
+      - "account review completed at defined frequency; dormant accounts disabled"
+    code_signatures:
+      - 'account.management|provision.account|deprovision|account.review|IAM'
+    cwe_ids: ["CWE-284"]
+    # Source: NIST SP 800-53 Rev 5 AC-2
+
+  - id: "AC-3"
+    title: "Access Enforcement"
+    family: "access-control"
+    severity: high
+    evidence_hints:
+      - "RBAC or ABAC enforced at application and infrastructure layers"
+      - "deny-by-default; explicit allow rules only"
+    code_signatures:
+      - 'RBAC|rbac|access.enforcement|deny.by.default|authorization|authz|authorize|require.?role|require.?permission|access.control|middleware.auth|auth.middleware'
+    cwe_ids: ["CWE-284", "CWE-285"]
+    # Source: NIST SP 800-53 Rev 5 AC-3
+
+  - id: "AC-6"
+    title: "Least Privilege"
+    family: "access-control"
+    severity: high
+    evidence_hints:
+      - "IAM roles scoped to minimum required permissions"
+      - "no wildcard resource grants in production IAM policies"
+    code_signatures:
+      - 'least.privilege|minimum.permission|IAM.scope|no.wildcard|deny.all'
+    cwe_ids: ["CWE-250"]
+    # Source: NIST SP 800-53 Rev 5 AC-6
+
+  - id: "AC-7"
+    title: "Unsuccessful Logon Attempts"
+    family: "access-control"
+    severity: medium
+    evidence_hints:
+      - "account lockout after N consecutive failed attempts (N ≤ 5)"
+      - "login attempt rate limiting and alerting"
+    code_signatures:
+      - 'lockout|max.attempts|failed.login|brute.force.protect|rate.limit.login'
+    cwe_ids: ["CWE-307"]
+    # Source: NIST SP 800-53 Rev 5 AC-7
+
+  - id: "AC-17"
+    title: "Remote Access"
+    family: "access-control"
+    severity: high
+    evidence_hints:
+      - "VPN or Zero Trust Network Access (ZTNA) required for remote access"
+      - "remote sessions encrypted with strong ciphers; MFA required"
+    code_signatures:
+      - 'VPN|ZTNA|zero.trust|remote.access|encrypted.tunnel|WireGuard|OpenVPN'
+    cwe_ids: ["CWE-319"]
+    # Source: NIST SP 800-53 Rev 5 AC-17
+
+  # ---------------------------------------------------------------------------
+  # Audit and Accountability (AU)
+  # ---------------------------------------------------------------------------
+  - id: "AU-2"
+    title: "Event Logging"
+    family: "audit"
+    severity: high
+    evidence_hints:
+      - "defined set of auditable events (successful/failed logins, privilege changes, data access)"
+      - "event log configuration reviewed and approved"
+    code_signatures:
+      - 'audit.event|log.event|audit.config|event.logging|auditd'
+    cwe_ids: ["CWE-778"]
+    # Source: NIST SP 800-53 Rev 5 AU-2
+
+  - id: "AU-3"
+    title: "Content of Audit Records"
+    family: "audit"
+    severity: medium
+    evidence_hints:
+      - "audit records include: timestamp, source, type, subject, outcome, resource"
+      - "structured logging (JSON) capturing all required fields"
+    code_signatures:
+      - 'structured.log|audit.record|log.format|correlation.id|event.schema'
+    cwe_ids: ["CWE-778"]
+    # Source: NIST SP 800-53 Rev 5 AU-3
+
+  - id: "AU-6"
+    title: "Audit Record Review, Analysis, and Reporting"
+    family: "audit"
+    severity: high
+    evidence_hints:
+      - "automated log analysis and alerting (SIEM) for anomalous events"
+      - "weekly or daily audit log review by security team"
+    code_signatures:
+      - 'SIEM|Splunk|Elastic|CloudWatch.Insights|log.analysis|alert.rule'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 AU-6
+
+  - id: "AU-9"
+    title: "Protection of Audit Information"
+    family: "audit"
+    severity: high
+    evidence_hints:
+      - "audit logs stored in write-once, append-only storage"
+      - "log access restricted to audit/security role; modifications prevented"
+    code_signatures:
+      - 'ObjectLock|immutable.log|append.only|log.protection|write.once'
+    cwe_ids: ["CWE-345"]
+    # Source: NIST SP 800-53 Rev 5 AU-9
+
+  - id: "AU-12"
+    title: "Audit Record Generation"
+    family: "audit"
+    severity: medium
+    evidence_hints:
+      - "audit capability enabled for all system components"
+      - "application instrumentation generating required audit events"
+    code_signatures:
+      - 'auditd|CloudTrail|audit.enable|log.generation|event.emission'
+    cwe_ids: ["CWE-778"]
+    # Source: NIST SP 800-53 Rev 5 AU-12
+
+  # ---------------------------------------------------------------------------
+  # Configuration Management (CM)
+  # ---------------------------------------------------------------------------
+  - id: "CM-2"
+    title: "Baseline Configuration"
+    family: "configuration-management"
+    severity: high
+    evidence_hints:
+      - "infrastructure-as-code (IaC) defining baseline system configurations"
+      - "configuration baseline documented and versioned in source control"
+    code_signatures:
+      - 'terraform|CloudFormation|CDK|Ansible|Puppet|baseline.config|IaC'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 CM-2
+
+  - id: "CM-3"
+    title: "Configuration Change Control"
+    family: "configuration-management"
+    severity: high
+    evidence_hints:
+      - "configuration changes reviewed and approved before implementation"
+      - "IaC changes go through PR review with approval gates"
+    code_signatures:
+      - 'config.change|PR.review|change.approval|terraform.plan|drift.detection'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 CM-3
+
+  - id: "CM-6"
+    title: "Configuration Settings"
+    family: "configuration-management"
+    severity: medium
+    evidence_hints:
+      - "CIS Benchmark or DISA STIG applied to OS and middleware configuration"
+      - "hardened AMI/container base images used for all deployments"
+    code_signatures:
+      - 'CIS.benchmark|STIG|hardened.image|security.baseline|OS.hardening'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 CM-6
+
+  - id: "CM-7"
+    title: "Least Functionality"
+    family: "configuration-management"
+    severity: medium
+    evidence_hints:
+      - "unnecessary services, ports, and protocols disabled on all systems"
+      - "allowlist of permitted software and processes enforced"
+    code_signatures:
+      - 'disable.service|port.allowlist|least.functionality|AppArmor|SELinux'
+    cwe_ids: ["CWE-250"]
+    # Source: NIST SP 800-53 Rev 5 CM-7
+
+  # ---------------------------------------------------------------------------
+  # Identification and Authentication (IA)
+  # ---------------------------------------------------------------------------
+  - id: "IA-2"
+    title: "Identification and Authentication (Organizational Users)"
+    family: "identification-authentication"
+    severity: critical
+    evidence_hints:
+      - "all organizational users authenticate with a unique identifier"
+      - "MFA required for privileged and remote access"
+    code_signatures:
+      - 'SSO|SAML|OIDC|unique.identity|MFA|authentication.provider|authenticate|authentication|verify.?token|jwt|session.token|login.required|middleware.auth|auth.middleware'
+    cwe_ids: ["CWE-287"]
+    # Source: NIST SP 800-53 Rev 5 IA-2
+
+  - id: "IA-5"
+    title: "Authenticator Management"
+    family: "identification-authentication"
+    severity: high
+    evidence_hints:
+      - "password complexity, minimum length (≥15 chars per rev5), and rotation policy"
+      - "credentials stored using approved one-way hashing (bcrypt, Argon2, PBKDF2)"
+    code_signatures:
+      - 'bcrypt|argon2|PBKDF2|password.hash|credential.policy|authenticator.manage'
+    cwe_ids: ["CWE-521", "CWE-916"]
+    # Source: NIST SP 800-53 Rev 5 IA-5
+
+  - id: "IA-8"
+    title: "Identification and Authentication (Non-Organizational Users)"
+    family: "identification-authentication"
+    severity: high
+    evidence_hints:
+      - "external users authenticated via federated identity or OAuth 2.0/OIDC"
+      - "external-facing APIs require API key or bearer token with rate limiting"
+    code_signatures:
+      - 'OAuth|OIDC|API.key|bearer.token|federated.identity|external.auth'
+    cwe_ids: ["CWE-287"]
+    # Source: NIST SP 800-53 Rev 5 IA-8
+
+  # ---------------------------------------------------------------------------
+  # Risk Assessment (RA)
+  # ---------------------------------------------------------------------------
+  - id: "RA-3"
+    title: "Risk Assessment"
+    family: "risk-assessment"
+    severity: high
+    evidence_hints:
+      - "formal risk assessment conducted annually or when environment changes significantly"
+      - "risk register maintained with residual risk and treatment plans"
+    code_signatures:
+      - 'risk.assessment|risk.register|threat.model|risk.treatment'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 RA-3
+
+  - id: "RA-5"
+    title: "Vulnerability Monitoring and Scanning"
+    family: "risk-assessment"
+    severity: high
+    evidence_hints:
+      - "automated vulnerability scanning (Trivy, Grype, AWS Inspector, Qualys) in CI/CD"
+      - "CVE tracking with SLA for critical and high vulnerabilities"
+    code_signatures:
+      - 'trivy|grype|Inspector|Qualys|Nessus|vulnerability.scan|CVE|CVSS'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 RA-5
+
+  # ---------------------------------------------------------------------------
+  # System and Communications Protection (SC)
+  # ---------------------------------------------------------------------------
+  - id: "SC-7"
+    title: "Boundary Protection"
+    family: "system-communications-protection"
+    severity: high
+    evidence_hints:
+      - "network boundary controls: security groups, NACLs, WAF at perimeter"
+      - "egress filtering to prevent data exfiltration"
+    code_signatures:
+      - 'security.group|network.boundary|WAF|egress.filter|NACL|VPC.boundary'
+    cwe_ids: ["CWE-284"]
+    # Source: NIST SP 800-53 Rev 5 SC-7
+
+  - id: "SC-8"
+    title: "Transmission Confidentiality and Integrity"
+    family: "system-communications-protection"
+    severity: critical
+    evidence_hints:
+      - "TLS 1.2+ for all data-in-transit; TLS 1.0/1.1 disabled"
+      - "certificate management with automated renewal"
+    code_signatures:
+      - 'TLS|TLSv1\.[23]|HTTPS|ssl_context|certificate.renewal|HSTS'
+    cwe_ids: ["CWE-319", "CWE-326"]
+    # Source: NIST SP 800-53 Rev 5 SC-8
+
+  - id: "SC-12"
+    title: "Cryptographic Key Establishment and Management"
+    family: "system-communications-protection"
+    severity: high
+    evidence_hints:
+      - "cryptographic key lifecycle management: generation, storage, rotation, retirement"
+      - "HSM or KMS used for key protection; key material never exposed in plaintext"
+    code_signatures:
+      - 'KMS|HSM|key.management|key.rotation|GenerateDataKey|key.lifecycle'
+    cwe_ids: ["CWE-321"]
+    # Source: NIST SP 800-53 Rev 5 SC-12
+
+  - id: "SC-13"
+    title: "Cryptographic Protection"
+    family: "system-communications-protection"
+    severity: high
+    evidence_hints:
+      - "FIPS 140-2/3 validated cryptographic modules used"
+      - "approved algorithms: AES-256, RSA-2048+, SHA-256+"
+    code_signatures:
+      - 'FIPS|AES.?256|RSA.2048|SHA.256|approved.algorithm|FIPS.140'
+    cwe_ids: ["CWE-327", "CWE-326"]
+    # Source: NIST SP 800-53 Rev 5 SC-13
+
+  - id: "SC-28"
+    title: "Protection of Information at Rest"
+    family: "system-communications-protection"
+    severity: high
+    evidence_hints:
+      - "encryption at rest enabled for all datastores containing sensitive information"
+      - "database encryption (RDS encrypted, Azure Transparent Data Encryption)"
+    code_signatures:
+      - 'encryption.at.rest|RDS.encrypt|TDE|StorageEncrypted|EBS.encrypt|S3.SSE'
+    cwe_ids: ["CWE-311"]
+    # Source: NIST SP 800-53 Rev 5 SC-28
+
+  # ---------------------------------------------------------------------------
+  # System and Information Integrity (SI)
+  # ---------------------------------------------------------------------------
+  - id: "SI-3"
+    title: "Malicious Code Protection"
+    family: "system-information-integrity"
+    severity: high
+    evidence_hints:
+      - "container image scanning and endpoint protection deployed"
+      - "antimalware solution active on all compute resources"
+    code_signatures:
+      - 'malware.scan|image.scan|ClamAV|Defender|GuardDuty|container.scan|antivirus'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 SI-3
+
+  - id: "SI-4"
+    title: "System Monitoring"
+    family: "system-information-integrity"
+    severity: high
+    evidence_hints:
+      - "IDS/IPS or security monitoring solution active with alerting"
+      - "anomaly detection enabled (GuardDuty, Defender for Cloud, Falco)"
+    code_signatures:
+      - 'GuardDuty|Falco|IDS|IPS|anomaly.detection|security.monitoring|SIEM'
+    cwe_ids: []
+    # Source: NIST SP 800-53 Rev 5 SI-4
+
+  - id: "SI-7"
+    title: "Software, Firmware, and Information Integrity"
+    family: "system-information-integrity"
+    severity: high
+    evidence_hints:
+      - "code signing for deployed artifacts; container image digests pinned"
+      - "dependency integrity checks (pip hash checking, npm lockfile, Sigstore)"
+    code_signatures:
+      - 'code.signing|image.digest|Sigstore|cosign|integrity.check|supply.chain'
+    cwe_ids: ["CWE-494", "CWE-345"]
+    # Source: NIST SP 800-53 Rev 5 SI-7

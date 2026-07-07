@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "description": "The ground-truth catalog Phase A extracts from ``PLAYBOOK.md`` (or\nfrom the codebase directly when no playbook is present).\n\nPhase A's job is to lock the closed universe Phase B / C / D must\nrespect \u2014 every CICS transaction emitted into a log, every program\nname, every VSAM file, every copybook, and every IP / hostname / port\nmust round-trip back to this digest (design spec \u00a7\"Anti-hallucination\").\n\nFields are free-form lists of strings: the M5 ``ProgramInventory``\nPydantic shape is richer, but for M6's purposes a normalised name\nset is the contract. Phase B / C / D treat any reference to something\nnot in this digest as a hard failure (Phase D exit code 4 \u2014 design\nspec \u00a7\"CLI exit codes\").",
+  "properties": {
+    "copybooks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Copybooks",
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "networks_and_ports": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Networks And Ports",
+      "type": "array"
+    },
+    "programs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Programs",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transactions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Transactions",
+      "type": "array"
+    }
+  },
+  "title": "EntitiesDigest",
+  "type": "object"
+}

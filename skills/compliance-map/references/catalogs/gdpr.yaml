@@ -1,0 +1,271 @@
+# GDPR Starter Catalog — forge-foundry compliance-map (S70)
+# Source: Regulation (EU) 2016/679 (General Data Protection Regulation)
+# ~22 highest-priority articles/requirements for BFSI software systems
+# Article references are to the GDPR text as published in the Official Journal of the EU.
+framework: gdpr
+version: "2016/679"
+released: "2018-05-25"
+controls:
+  - id: "Art.5.1.a"
+    title: "Lawfulness, fairness and transparency of processing"
+    family: "principles"
+    severity: high
+    evidence_hints:
+      - "privacy notice provided to data subjects at point of collection"
+      - "legal basis documented for each processing activity"
+    code_signatures:
+      - 'privacy.notice|legal.basis|consent|legitimate.interest'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 5(1)(a)
+
+  - id: "Art.5.1.b"
+    title: "Purpose limitation — data collected for specified, explicit, legitimate purposes"
+    family: "principles"
+    severity: high
+    evidence_hints:
+      - "processing purpose documented in records of processing activities (RoPA)"
+      - "no secondary use without compatible purpose or fresh consent"
+    code_signatures:
+      - 'purpose.limitation|data.purpose|ropa|processing.purpose'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 5(1)(b)
+
+  - id: "Art.5.1.c"
+    title: "Data minimisation — adequate, relevant, limited to what is necessary"
+    family: "principles"
+    severity: medium
+    evidence_hints:
+      - "API responses exclude unnecessary PII fields"
+      - "data model review: no collection of fields unused by stated purpose"
+    code_signatures:
+      - 'data.minimis|minimal.data|exclude.pii|strip.fields'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 5(1)(c)
+
+  - id: "Art.5.1.e"
+    title: "Storage limitation — data not kept longer than necessary"
+    family: "principles"
+    severity: high
+    evidence_hints:
+      - "retention policy defined per data category with automated deletion"
+      - "TTL on PII records or scheduled purge job"
+    code_signatures:
+      - 'retention|ttl|TTL|purge|delete.after|expire.at|data.lifecycle'
+    cwe_ids: ["CWE-312"]
+    # Source: GDPR Art. 5(1)(e)
+
+  - id: "Art.5.1.f"
+    title: "Integrity and confidentiality — appropriate security for personal data"
+    family: "principles"
+    severity: high
+    evidence_hints:
+      - "encryption at rest and in transit for personal data"
+      - "access controls on PII datastores"
+    code_signatures:
+      - 'encrypt|TLS|access.control|rbac|PII.protect'
+    cwe_ids: ["CWE-311", "CWE-319"]
+    # Source: GDPR Art. 5(1)(f)
+
+  - id: "Art.6"
+    title: "Lawfulness of processing — at least one legal basis must apply"
+    family: "lawfulness"
+    severity: critical
+    evidence_hints:
+      - "consent record stored with timestamp and version of consent notice"
+      - "legitimate interest assessment (LIA) documented for non-consent processing"
+    code_signatures:
+      - 'consent.record|consent.timestamp|legal.basis|legitimate.interest|LIA'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 6
+
+  - id: "Art.13"
+    title: "Information to be provided where personal data collected from the data subject"
+    family: "transparency"
+    severity: high
+    evidence_hints:
+      - "privacy policy endpoint or link at point of data collection"
+      - "information disclosure: identity of controller, purposes, retention periods, rights"
+    code_signatures:
+      - 'privacy.policy|privacy_url|data.controller|gdpr.notice'
+    cwe_ids: []
+    # Source: GDPR Art. 13
+
+  - id: "Art.17"
+    title: "Right to erasure ('right to be forgotten')"
+    family: "data-subject-rights"
+    severity: high
+    evidence_hints:
+      - "delete-account endpoint that purges or anonymises all PII across all stores"
+      - "cascading delete across microservices or event-driven erasure workflow"
+    code_signatures:
+      - 'delete.account|right.to.erasure|purge.user|anonymize|anonymise|forget.user'
+    cwe_ids: ["CWE-312"]
+    # Source: GDPR Art. 17
+
+  - id: "Art.20"
+    title: "Right to data portability"
+    family: "data-subject-rights"
+    severity: medium
+    evidence_hints:
+      - "data export endpoint returning personal data in structured, machine-readable format (JSON/CSV)"
+      - "export includes all personal data held in the system"
+    code_signatures:
+      - 'data.export|export.user|portability|download.data|user.data.json'
+    cwe_ids: []
+    # Source: GDPR Art. 20
+
+  - id: "Art.21"
+    title: "Right to object to processing"
+    family: "data-subject-rights"
+    severity: medium
+    evidence_hints:
+      - "opt-out mechanism for marketing or profiling processing"
+      - "objection recorded and processing halted within reasonable timeframe"
+    code_signatures:
+      - 'opt.out|unsubscribe|object.processing|processing.objection|marketing.consent'
+    cwe_ids: []
+    # Source: GDPR Art. 21
+
+  - id: "Art.25.1"
+    title: "Data protection by design"
+    family: "privacy-by-design"
+    severity: high
+    evidence_hints:
+      - "privacy impact documented at design phase (DPIA or equivalent)"
+      - "pseudonymisation used where full identification is not required"
+    code_signatures:
+      - 'pseudonymize|pseudonymise|privacy.by.design|DPIA|data.protection.design'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 25(1)
+
+  - id: "Art.25.2"
+    title: "Data protection by default"
+    family: "privacy-by-design"
+    severity: high
+    evidence_hints:
+      - "default settings expose minimum personal data (opt-in not opt-out)"
+      - "public-facing APIs return only data necessary for stated purpose"
+    code_signatures:
+      - 'privacy.default|default.private|minimal.disclosure|opt.in'
+    cwe_ids: ["CWE-359"]
+    # Source: GDPR Art. 25(2)
+
+  - id: "Art.28"
+    title: "Processor — data processing agreements required for sub-processors"
+    family: "processor-obligations"
+    severity: high
+    evidence_hints:
+      - "Data Processing Agreement (DPA) signed with all sub-processors"
+      - "sub-processor list maintained and updated"
+    code_signatures:
+      - 'DPA|data.processing.agreement|sub.processor|processor.contract'
+    cwe_ids: []
+    # Source: GDPR Art. 28
+
+  - id: "Art.30"
+    title: "Records of processing activities (RoPA)"
+    family: "accountability"
+    severity: medium
+    evidence_hints:
+      - "RoPA document listing all processing activities, categories of data, and recipients"
+      - "RoPA maintained and available to supervisory authority on request"
+    code_signatures:
+      - 'ropa|RoPA|processing.register|data.register|record.of.processing'
+    cwe_ids: []
+    # Source: GDPR Art. 30
+
+  - id: "Art.32.1.a"
+    title: "Pseudonymisation and encryption of personal data"
+    family: "security-of-processing"
+    severity: high
+    evidence_hints:
+      - "AES-256 encryption at rest for databases containing personal data"
+      - "TLS 1.2+ for all data-in-transit"
+    code_signatures:
+      - 'AES.?256|encryption.at.rest|TLS|pseudonymize|pseudonymise'
+    cwe_ids: ["CWE-311", "CWE-319"]
+    # Source: GDPR Art. 32(1)(a)
+
+  - id: "Art.32.1.b"
+    title: "Ongoing confidentiality, integrity, availability and resilience"
+    family: "security-of-processing"
+    severity: high
+    evidence_hints:
+      - "availability SLA and redundancy architecture documented"
+      - "BCP/DR plan tested annually"
+    code_signatures:
+      - 'redundancy|HA|high.availability|DR|disaster.recovery|BCP|resilience'
+    cwe_ids: []
+    # Source: GDPR Art. 32(1)(b)
+
+  - id: "Art.32.1.d"
+    title: "Regular testing and evaluation of technical and organisational measures"
+    family: "security-of-processing"
+    severity: medium
+    evidence_hints:
+      - "annual penetration test, vulnerability assessment, or security audit"
+      - "automated security scanning in CI pipeline"
+    code_signatures:
+      - 'security.audit|pen.test|penetration|vulnerability.scan|SAST|DAST'
+    cwe_ids: []
+    # Source: GDPR Art. 32(1)(d)
+
+  - id: "Art.33"
+    title: "Notification of personal data breach to supervisory authority (72 hours)"
+    family: "breach-notification"
+    severity: critical
+    evidence_hints:
+      - "breach notification runbook with 72-hour timeline"
+      - "incident response plan includes DPA/supervisory authority notification step"
+    code_signatures:
+      - 'breach.notification|data.breach|supervisory.authority|CNIL|ICO|BSI.notification'
+    cwe_ids: []
+    # Source: GDPR Art. 33
+
+  - id: "Art.34"
+    title: "Communication of personal data breach to data subjects"
+    family: "breach-notification"
+    severity: high
+    evidence_hints:
+      - "data subject notification template and process documented"
+      - "decision criteria for high-risk vs low-risk breach"
+    code_signatures:
+      - 'breach.communication|subject.notification|high.risk.breach|notify.user'
+    cwe_ids: []
+    # Source: GDPR Art. 34
+
+  - id: "Art.35"
+    title: "Data protection impact assessment (DPIA) for high-risk processing"
+    family: "accountability"
+    severity: high
+    evidence_hints:
+      - "DPIA conducted and documented before high-risk processing begins"
+      - "DPIA reviewed and updated when processing changes"
+    code_signatures:
+      - 'DPIA|data.protection.impact|privacy.impact.assessment|PIA'
+    cwe_ids: []
+    # Source: GDPR Art. 35
+
+  - id: "Art.44"
+    title: "Transfers of personal data only to countries with adequate protection"
+    family: "international-transfers"
+    severity: high
+    evidence_hints:
+      - "SCCs (Standard Contractual Clauses) or Adequacy Decision documented for cross-border transfers"
+      - "data residency controls preventing transfer to non-adequate third countries"
+    code_signatures:
+      - 'SCC|standard.contractual.clause|adequacy.decision|data.residency|cross.border.transfer'
+    cwe_ids: []
+    # Source: GDPR Art. 44
+
+  - id: "Art.83.4"
+    title: "Administrative fines for infringements of data-subject rights and controller obligations"
+    family: "penalties"
+    severity: critical
+    evidence_hints:
+      - "data subject rights processes (access, erasure, portability, objection) implemented and tested"
+      - "DPO appointed and registered where required"
+    code_signatures:
+      - 'DPO|data.protection.officer|data.subject.rights|GDPR.compliance'
+    cwe_ids: []
+    # Source: GDPR Art. 83(4) — penalty reference; mitigation via rights implementation

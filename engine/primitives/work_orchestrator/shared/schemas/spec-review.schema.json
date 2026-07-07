@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-orchestrator-spec-review",
+  "title": "C7 spec-review verdict",
+  "description": "Fresh-context judgment of a node's C1 spec BEFORE any building (spec §2.1 step 2). The judge decides whether the spec is coherent, faithful to the issue intent, and not over/under-scoped. A 'fail' halts the node; 'revise' triggers one bounded re-spec retry; 'pass' proceeds to plan.",
+  "type": "object",
+  "required": ["verdict", "issues"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "revise", "fail"],
+      "description": "pass = spec is sound, proceed to plan. revise = fixable issues, re-spec once. fail = the spec is unsound and the node halts."
+    },
+    "issues": {
+      "type": "array",
+      "description": "Specific problems with the spec. Required when verdict is revise/fail; may be empty on pass.",
+      "items": {
+        "type": "object",
+        "required": ["severity", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "warning", "info"],
+            "description": "blocker = spec cannot be built against as-is; warning = should be addressed; info = observation."
+          },
+          "description": {
+            "type": "string",
+            "description": "One or two sentences describing the spec problem and what a sound spec would say instead."
+          }
+        }
+      }
+    }
+  }
+}

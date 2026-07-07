@@ -1,0 +1,52 @@
+# R1 /rules-gen catalog — BFSI compliance and audit.
+#
+# Path-scoped: only loaded for files under compliance/, audit/, or
+# reporting/ directories. Layers SOX-404, GDPR, DORA, FFIEC, and
+# regulatory-reporting rules on top of bfsi-core.
+name: bfsi-compliance
+description: "BFSI compliance: SOX-404, GDPR, DORA, FFIEC, regulatory reporting"
+version: "1.0.0"
+paths:
+  - "**/compliance/**"
+  - "**/audit/**"
+  - "**/reporting/**"
+sections:
+  - heading: "SOX-404 IT general controls"
+    rules:
+      - "Segregation of duties: a developer who writes code cannot deploy that code to production for systems in SOX scope; the deploy pipeline gates on a separate human approval or an automated four-eyes check."
+      - "Change management produces an evidentiary trail (ticket → PR → approval → deploy log) that an auditor can reconstruct without engineer assistance; the trail lives ≥ 7 years."
+      - "Access reviews run quarterly for every account with production write or read-of-financial-data privilege; orphaned accounts are revoked within 24 hours of detection."
+      - "Privileged-access sessions (DBA, infra admin, break-glass) are logged with command-level granularity, time-bounded (≤ 4 hours), and reviewed within 5 business days."
+      - "All production-impacting infrastructure changes (IaC, schema migrations, feature flags) carry a documented rollback plan validated in a non-prod environment before promotion."
+
+  - heading: "GDPR data subject rights"
+    rules:
+      - "Right of access (Art. 15): the data inventory enumerates every system that holds personal data so a subject access request can be fulfilled within 30 days without engineer-by-engineer hunting."
+      - "Right to erasure (Art. 17): every personal-data table has a documented cascade path; the erasure pipeline runs against backups within the backup retention window or the residual risk is documented in the ROPA."
+      - "Right to portability (Art. 20): export formats are machine-readable structured data (JSON, CSV, XML), not screenshots or PDFs of HTML; the export schema is stable across releases."
+      - "Right to rectification (Art. 16): user-facing fields are editable through a self-service path or surfaced for a support agent without requiring a database write by an engineer."
+      - "Lawful-basis tracking: every personal-data field carries metadata for its lawful basis (consent, contract, legal obligation, vital interest, public task, legitimate interest); fields without a lawful basis are forbidden in production."
+
+  - heading: "DORA operational resilience"
+    rules:
+      - "Critical or important functions identified per DORA Art. 8 maintain a documented business-impact tolerance (RTO, RPO, max tolerable downtime) that the alerting and runbook stack measure against."
+      - "Third-party ICT providers (cloud, SaaS, data) are inventoried with contractual exit plans and demonstrable concentration-risk analysis (DORA Art. 28); single-provider dependencies for critical functions are flagged in the risk register."
+      - "Major ICT-related incidents trigger a regulator-notification pipeline within the DORA RTS-mandated window (typically 4 hours initial, 72 hours intermediate, 1 month final report); the notification template is rehearsed annually."
+      - "Threat-led penetration testing (TLPT) for systemically important institutions follows TIBER-EU methodology and runs at least every 3 years; findings feed back into the resilience program."
+      - "ICT risk-management framework outputs are reviewed and signed off by the management body at least annually (DORA Art. 5)."
+
+  - heading: "FFIEC CAT guidance"
+    rules:
+      - "Cybersecurity maturity is assessed at least annually against the FFIEC Cybersecurity Assessment Tool (CAT) five domains: risk management, threat intelligence, controls, external dependency, incident management."
+      - "Authentication for high-risk online banking transactions uses layered authentication beyond a username/password (FFIEC supplemental guidance 2011, reaffirmed); behavioural analytics or device-fingerprinting layers must be evaluated against bias and accessibility."
+      - "Customer awareness controls (transaction-confirmation prompts, out-of-band notifications) are mandatory for high-risk transactions; customer opt-out of these controls is itself a high-risk event that emits an audit record."
+      - "Wire-transfer fraud monitoring includes velocity, geographic-anomaly, and counterparty-novelty heuristics; suspicious transactions hold automatically until a human reviewer clears them within the FFIEC-recommended window."
+      - "Cyber-incident reporting follows the 36-hour FFIEC / FRB / OCC / FDIC Computer-Security Incident Notification Rule (12 CFR 304.20 for FDIC, similar at other agencies) for any significant computer-security incident."
+
+  - heading: "Regulatory reporting formats"
+    rules:
+      - "FFIEC Call Report (Form 031/041), Federal Reserve FR Y-9C, and equivalent regulatory filings use the regulator's XBRL or schema-validated format directly — never a CSV-then-transform pipeline that loses field-level lineage."
+      - "Numeric fields carry an explicit unit and precision in the schema (basis points, percent, USD-thousands, USD-millions); ambiguous magnitudes are a top-three source of reporting errors."
+      - "Reporting cut-off times are timezone-aware and reference the regulator's authoritative timezone (typically America/New_York for U.S. federal filings, Europe/London for PRA, Europe/Brussels for SSM)."
+      - "Restatements are tracked with the original filing reference, the restated value, the delta, and the documented root cause; a restatement is itself a reportable event under most regimes."
+      - "Inter-period consistency checks (totals foot, prior-period rollforward ties, sub-totals match supporting schedule) run automatically before submission, not after — silent failures here are the highest-impact reporting risk."

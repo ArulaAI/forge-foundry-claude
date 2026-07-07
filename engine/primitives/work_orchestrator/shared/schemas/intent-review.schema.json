@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-orchestrator-intent-review",
+  "title": "C7 clean-room intent-review verdict",
+  "description": "Fresh-context judgment of a leaf's diff AGAINST the node's issue/spec intent (spec §3.1) — distinct from C4's lens-based code review. The judge asks: does the change actually deliver what the issue/spec asked for, nothing more, nothing less? Feeds the node-gate alongside the review chain and spec-validate.",
+  "type": "object",
+  "required": ["verdict", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "review", "fail"],
+      "description": "pass = the diff faithfully delivers the intent. review = partial/uncertain match needing human eyes. fail = the diff does not deliver the intent (missing, wrong, or scope-creeping)."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Intent mismatches. Required when verdict is review/fail; may be empty on pass.",
+      "items": {
+        "type": "object",
+        "required": ["severity", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "warning", "info"],
+            "description": "blocker = intent not delivered; warning = partial/risky; info = observation."
+          },
+          "description": {
+            "type": "string",
+            "description": "What aspect of the issue/spec intent the diff fails to deliver (or over-delivers), with reference to the relevant criterion."
+          }
+        }
+      }
+    }
+  }
+}

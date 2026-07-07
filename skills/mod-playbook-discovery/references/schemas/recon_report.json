@@ -1,0 +1,105 @@
+{
+  "additionalProperties": false,
+  "description": "Phase A reconnaissance output (``{--state-dir}/recon.json``).\n\nSchema-versioned at ``\"1.0\"`` — downstream M6 / consumers refuse a\nmismatched output.\n\n``file_tree_summary`` is the curated digest of ``find -maxdepth 5``\noutput (truncated to the top-N entries — the depth budget is enforced\nby ``shared/recon.py``, not by this model). ``loc_by_language`` is\nkeyed by ``SourceLanguage`` (as a string for JSON-roundtrip\nfriendliness) and maps to a non-negative integer count.\n``manifest_hits`` is the list of repo-relative paths of build\ndescriptors / CSDs / system configs Phase A located.\n``existing_doc_inventory`` is the list of repo-relative paths of any\nMarkdown / RST / TXT documentation the source tree already carries\n(these inform §16 Appendices).\n\nGemini subset (issue #548 / SPEC §6.3 + §7.2): persisted M5 Phase-A\nartefact, not an LLM ``response_format`` schema. The\n``loc_by_language`` dict (``additionalProperties: <schema>``) plus\n``anyOf`` for ``detected_flavor`` Optionals exceed Gemini's accepted\nsubset. Decorated with ``@accepts_extended_schema`` because Phase A\nwrites ``recon.json`` deterministically to disk.",
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "code_root": {
+      "title": "Code Root",
+      "type": "string"
+    },
+    "mainframe_flavor": {
+      "anyOf": [
+        {
+          "enum": [
+            "cics_cobol",
+            "jcl_batch",
+            "ims_db",
+            "python",
+            "java_ee",
+            "powerbuilder",
+            "delphi",
+            "vb6",
+            "oracle_forms",
+            "as400_rpg"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mainframe Flavor"
+    },
+    "file_tree_summary": {
+      "default": "",
+      "title": "File Tree Summary",
+      "type": "string"
+    },
+    "loc_by_language": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Loc By Language",
+      "type": "object"
+    },
+    "manifest_hits": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Manifest Hits",
+      "type": "array"
+    },
+    "existing_doc_inventory": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Existing Doc Inventory",
+      "type": "array"
+    },
+    "detected_flavor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detected Flavor"
+    },
+    "detected_flavor_confidence": {
+      "anyOf": [
+        {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detected Flavor Confidence"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code_root"
+  ],
+  "title": "ReconReport",
+  "type": "object"
+}

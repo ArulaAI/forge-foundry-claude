@@ -1,0 +1,52 @@
+# R1 /rules-gen catalog — BFSI core (always-on baseline).
+#
+# Path-less catalog: every file in the consuming repo picks up these rules.
+# Covers the universal BFSI controls (PCI DSS 4.0 + PII handling +
+# encryption-at-rest + audit trail + retention + incident response) that
+# apply across the whole codebase, not just to the obvious crypto / auth
+# / compliance modules. Path-scoped catalogs (bfsi-auth, bfsi-compliance,
+# bfsi-security) add domain depth on top of this baseline.
+name: bfsi-core
+description: "BFSI baseline controls — always-on PCI DSS 4.0, PII handling, audit, and retention"
+version: "1.0.0"
+paths: []
+sections:
+  - heading: "PCI DSS 4.0 cardholder data handling"
+    rules:
+      - "Cardholder data (PAN, expiry, CVV2/CVC2, PIN, magnetic stripe) must never be stored after authorization unless a documented business need exists (PCI DSS 4.0 §3.3, §3.4)."
+      - "Mask the PAN to the first 6 / last 4 digits in any UI, log entry, report, ticket, or email body (PCI DSS 4.0 §3.4.1)."
+      - "Sensitive Authentication Data (full track, CVV2/CVC2, PIN block) must never be stored after authorization — no exception, no business justification clause (PCI DSS 4.0 §3.3.1)."
+      - "PAN encryption keys live in a managed HSM or KMS (AWS KMS, Azure Key Vault HSM, Thales Luna). Hardcoded or env-var keys are a PCI failure."
+      - "Truncated PAN displays use cryptographically irreversible truncation, not a substring of the encrypted value (PCI DSS 4.0 §3.4.2)."
+
+  - heading: "PII / PAN logging prohibition"
+    rules:
+      - "Never log full PAN, CVV2/CVC2, PIN, password, OTP, security question answer, social security number, government ID, or biometric data — at any log level, including DEBUG."
+      - "Log redaction must happen at the application boundary (before the logger receives the value), not in a downstream log shipper, because shippers fail open."
+      - "Use structured logging (JSON) with an explicit allowlist of fields that may carry PII. Default-deny: any field not on the allowlist is redacted."
+      - "Stack traces leak PII via variable inspection — sanitize exception messages and arguments before they reach the logger."
+      - "Audit-log entries that legitimately need a PAN reference use a tokenized PAN (vault token), not the live value."
+
+  - heading: "Encryption at rest"
+    rules:
+      - "All databases storing cardholder data, PII, or financial transaction data use transparent data encryption (TDE) AND application-layer field encryption for the high-sensitivity columns — defense in depth, not either-or."
+      - "S3 / Azure Blob / GCS buckets holding regulated data use SSE-KMS (or equivalent) with a CMK owned by the application's security team, not the platform default key."
+      - "Backups, snapshots, and DR replicas are encrypted with the same key strength as the primary — backup is the most common exfiltration vector."
+      - "Filesystem-level encryption on the host (LUKS, BitLocker) does NOT satisfy PCI DSS — application or DB-layer encryption is required (PCI DSS 4.0 §3.5)."
+      - "Key rotation is automated at least annually for data-encrypting keys and at least every 2 years for key-encrypting keys; rotation must be testable in non-prod first."
+
+  - heading: "Audit trail and incident readiness"
+    rules:
+      - "Every read, modification, or export of PII / cardholder data writes an audit event with: actor identity, timestamp (UTC, RFC 3339 with subsecond precision), action type, target identifier, result (success/failure), and source IP."
+      - "Audit logs are append-only — written to a WORM bucket, an immutable Aurora cluster, or a dedicated SIEM pipeline. Application code never receives an UPDATE / DELETE permission on the audit table."
+      - "Admin actions (privilege grants, schema changes, configuration changes, key rotations) carry a separate audit event class with elevated retention (≥ 7 years for SOX / PCI)."
+      - "Failed authentication, failed authorization, and circuit-breaker trips emit structured audit events that PagerDuty / Opsgenie can match without grep heuristics — silent denial defeats detection."
+      - "Tokens, sessions, and API keys must be revocable within 15 minutes of an incident declaration; build artifacts, dependency lockfiles, container images, and SBOMs persist ≥ 90 days for post-incident forensic analysis."
+
+  - heading: "Data retention and deletion"
+    rules:
+      - "Every data category in the system has an explicit retention period documented in the data inventory; data without a category is forbidden in production."
+      - "Card transaction data: retain only as long as the merchant agreement and regulatory requirement demands, then purge — not archive, purge (PCI DSS 4.0 §3.2)."
+      - "GDPR / CCPA right-to-erasure requests must propagate to backups within the retention window; if backups can't be selectively purged, document the retention-window risk in the data inventory."
+      - "Soft-delete flags (is_deleted=true) do NOT satisfy a regulatory deletion obligation — the row must be physically purged or the regulated columns nulled."
+      - "Log retention follows the data-class retention: a log containing a PAN inherits PAN retention (≤ 1 year by default for transaction logs)."

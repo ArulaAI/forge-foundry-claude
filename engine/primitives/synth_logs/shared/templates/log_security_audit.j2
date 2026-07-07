@@ -1,0 +1,126 @@
+{# M6 /mod-synth-logs Phase C — security_audit renderer body (M6-TEMPLATE-4 / #472).
+
+   Renders the body of ``_render_security_audit()``. CICS security
+   audit trail — signon attempts, password changes, privileged ops,
+   and account lockouts (BankDemo reference ``synth-logs-generate.md``
+   §"LOG FILE 10"). Emitted as JSON Lines so the Day-3 post-mortem
+   trace can be filtered with ``jq`` without a custom regex.
+
+   ``validate.py`` already declares ``security_audit`` as a JSONL
+   format (see ``_is_jsonl_format``), so emitting JSON Lines here
+   matches the consumer-side contract — a text-grammar emit would
+   trip the JSONL validator at Phase D.
+
+   Output line shape (one JSON object per line, sort_keys=True):
+
+       {"event_kind": "signon_success|signon_failure|password_change|privileged_op|user_lockout",
+        "resource": "<txn|file>",
+        "result": "OK|DENIED",
+        "source_ip": "<from entities_digest.networks_and_ports, host part>",
+        "terminal_id": "T<NNN:03d>",
+        "timestamp": "<ISO-8601 UTC>",
+        "user_id": "USER<NN:02d>"}
+
+   - ``timestamp``: ISO-8601 UTC, spaced linearly across the spec window.
+   - ``event_kind``: weighted choice — signon_success 70% (steady-state
+     teller activity), signon_failure 12% (typos / brute force), password_change 5%
+     (quarterly rotation), privileged_op 10% (admin ops), user_lockout 3%
+     (consequence of repeated failures). The Day-3 cascading incident
+     post-mortem looks for the signon_failure + user_lockout cluster
+     so the spec window for the incident-tier captures it via higher
+     ``entries_count``, not via a per-line incident marker.
+   - ``user_id``: closed pool ``USER{NN:02d}`` (1..50). Synthetic IDs
+     so the audit trail is reproducible without leaking real user
+     identifiers from any consumer environment.
+   - ``terminal_id``: closed pool ``T{NNN:03d}`` (1..200). Mirrors the
+     same shape used in ``cics_transaction`` and ``upstream_requests``
+     so a downstream correlation join across the three files lines
+     up on terminal_id without translation.
+   - ``source_ip``: drawn from ``entities_digest["networks_and_ports"]``
+     by splitting on the last ``:`` (same parser contract as the network
+     and upstream_requests templates). Empty endpoint catalog falls
+     back to ``0.0.0.0`` so the JSON shape stays well-formed.
+   - ``resource``: drawn from ``entities_digest["transactions"]`` for
+     signon / privileged events (the user signs on to fire a txn) or
+     from ``entities_digest["files"]`` for password_change / lockout
+     (the auth subsystem touches the user catalog file). Falls back to
+     ``"SYSTEM"`` only when both catalogs are empty.
+   - ``result``: deterministic per ``event_kind`` — signon_failure /
+     user_lockout always emit ``DENIED``; everything else emits ``OK``.
+     This is the post-mortem signal: the Day-3 trace pulls
+     ``result=DENIED`` lines and walks back to the originating session.
+
+   Anti-hallucination (design spec §"Anti-hallucination" layer 1):
+   ``user_id`` and ``terminal_id`` are closed pools (not entity-
+   derived). ``source_ip`` and ``resource`` are drawn from the digest
+   when the catalogs are non-empty. Fully empty digest produces empty
+   output — no synthesised free-form network or transaction names.
+
+   Determinism: only ``rng`` drives every sampling and jitter call,
+   and ``json.dumps(..., sort_keys=True)`` locks JSON key order.
+
+   Day-3 incident post-mortem hook: the consumer's post-mortem skill
+   greps for ``"result": "DENIED"`` and reconstructs the brute-force
+   sequence by joining ``terminal_id`` + ``source_ip`` across the
+   window. This template emits the raw signal; the planner inflates
+   ``entries_count`` for the incident tier so the cluster is visible.
+#}
+import json
+from datetime import datetime, timedelta, timezone
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+transactions = list(entities_digest.get("transactions", []))
+files = list(entities_digest.get("files", []))
+endpoints = list(entities_digest.get("networks_and_ports", []))
+if not transactions and not files and not endpoints:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+event_pool = (
+    ("signon_success",) * 70
+    + ("signon_failure",) * 12
+    + ("privileged_op",) * 10
+    + ("password_change",) * 5
+    + ("user_lockout",) * 3
+)
+denied_events = frozenset({"signon_failure", "user_lockout"})
+auth_subsystem_events = frozenset({"password_change", "user_lockout"})
+
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    event_kind = rng.choice(event_pool)
+    user_id = f"USER{rng.randint(1, 50):02d}"
+    terminal_id = f"T{rng.randint(1, 200):03d}"
+    if endpoints:
+        endpoint = rng.choice(endpoints)
+        source_ip = endpoint.rsplit(":", 1)[0]
+    else:
+        source_ip = "0.0.0.0"
+    if event_kind in auth_subsystem_events and files:
+        resource = rng.choice(files)
+    elif transactions:
+        resource = rng.choice(transactions)
+    elif files:
+        resource = rng.choice(files)
+    else:
+        resource = "SYSTEM"
+    result = "DENIED" if event_kind in denied_events else "OK"
+    record = {
+        "event_kind": event_kind,
+        "resource": resource,
+        "result": result,
+        "source_ip": source_ip,
+        "terminal_id": terminal_id,
+        "timestamp": ts.replace(tzinfo=timezone.utc).isoformat(),
+        "user_id": user_id,
+    }
+    lines.append(json.dumps(record, sort_keys=True))
+return "\n".join(lines) + "\n"

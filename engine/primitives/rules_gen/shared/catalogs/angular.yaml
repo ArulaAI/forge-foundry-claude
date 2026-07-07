@@ -1,0 +1,53 @@
+# R1 /rules-gen catalog — Angular 17+ application code.
+#
+# Path-scoped: only loaded for files inside the Angular workspace's
+# `src/app/` tree. Covers the modern Angular surface (standalone
+# components, signals, control flow, Angular DevKit 17+, the new
+# Material 3 / CDK, and the `ng test` / Jest / Karma transition).
+name: angular
+description: "Angular 17+ standalone components, signals, control flow, and testing"
+version: "1.0.0"
+paths:
+  - "**/src/app/**/*.ts"
+  - "**/src/app/**/*.html"
+sections:
+  - heading: "Standalone components and module-free architecture"
+    rules:
+      - "All new components, directives, and pipes use `standalone: true`; NgModule is deprecated as a primary unit of composition (Angular 14+; default in 17+)."
+      - "Imports go on the component itself via `imports: [...]`; lazy-loaded routes use `loadComponent: () => import(...)` instead of the legacy `loadChildren` module path."
+      - "Bootstrap with `bootstrapApplication(AppComponent, { providers: [...] })`; `AppModule` exists only in migration-frozen apps."
+      - "Inject dependencies via the `inject()` function inside the field initializer or constructor body; constructor parameter injection still works but `inject()` composes better with computed signal initializers and `runInInjectionContext`."
+      - "Provide services with `providedIn: 'root'` (or `'platform'` / `'any'` where appropriate) — do not register services in component `providers` arrays unless a fresh instance per component is required."
+
+  - heading: "Signals, RxJS, and reactivity"
+    rules:
+      - "Use signals (`signal()`, `computed()`, `effect()`) for component state in Angular 17+; signals integrate with change detection without `ChangeDetectorRef.markForCheck()` and make `OnPush` the default safe mode."
+      - "Convert RxJS observables to signals via `toSignal()` and signals to observables via `toObservable()` — bridge at the boundary, do not maintain parallel state."
+      - "RxJS subscriptions in components use the `takeUntilDestroyed()` operator (Angular 16+) or `AsyncPipe`; manual `ngOnDestroy` unsubscribe boilerplate is now an anti-pattern."
+      - "Effects (`effect(() => ...)`) are for synchronization with non-Angular systems (DOM APIs, localStorage, analytics); do NOT use effects to derive state — that's what `computed()` is for."
+      - "Set `ChangeDetectionStrategy.OnPush` on every standalone component; signals make it the safe default and the perf win is significant on lists."
+
+  - heading: "Built-in control flow and template syntax"
+    rules:
+      - "Use `@if`, `@for`, `@switch` built-in control flow (Angular 17+); the legacy `*ngIf`, `*ngFor`, `*ngSwitch` directives are scheduled for deprecation and the new syntax has better type narrowing."
+      - "`@for` requires a `track` expression — no exceptions. `track $index` is acceptable only for static lists; for dynamic lists track a stable id to avoid DOM churn."
+      - "Use the `@defer` block for code-splitting in templates; supply the loading / error / fallback sub-blocks to avoid layout shift while the deferred chunk streams in."
+      - "Template type-checking is set to `strict: true` in `tsconfig.app.json` — implicit `any` in templates fails CI. Use `$any()` only as a documented escape hatch."
+      - "Two-way binding via signals uses the `model()` input function (Angular 17.2+); legacy `@Input()` + `@Output()` for two-way binding is grandfathered only."
+
+  - heading: "Forms, HTTP, and routing"
+    rules:
+      - "Use Reactive Forms (`FormGroup`, `FormControl`) and the typed forms API (Angular 14+); template-driven forms are grandfathered only — Reactive Forms integrate with signals and test-mocking cleanly."
+      - "`provideHttpClient(withInterceptors([...]))` is the standalone replacement for `HttpClientModule`; class-based `HttpInterceptor` is grandfathered — new interceptors are functions."
+      - "Always use `HttpClient` with typed responses via generics (`http.get<UserDto>(...)`) — never raw `Response` or `unknown`."
+      - "Route configuration is a `Routes` array passed to `provideRouter(...)`; route guards are functional (`CanActivateFn`) — class-based guards are grandfathered only."
+      - "Server-side rendering (SSR) via `@angular/ssr` is the supported path; legacy `@nguniversal/express-engine` packages were replaced in Angular 17."
+
+  - heading: "Build, testing, and lint"
+    rules:
+      - "Angular 17+ uses the esbuild-based `application` builder by default; the legacy `browser` (webpack) builder is grandfathered — new apps use the application builder for 10x dev-server startup."
+      - "Strict mode is on in `tsconfig.json` (`strict: true`, `strictTemplates: true`, `noImplicitAny`, `strictNullChecks`); CI fails on relaxed compiler options."
+      - "Lint with `@angular-eslint` (the modern replacement for TSLint, which is EOL); pair with the project's Prettier config and run both as a pre-commit hook."
+      - "Testing: Jest is the supported unit-test runner from Angular 16+ via `@angular-builders/jest`; Karma is grandfathered and being removed. New apps configure Jest with `jest-preset-angular`."
+      - "End-to-end testing uses Cypress or Playwright; Protractor is EOL and was removed from `ng e2e` defaults — do not start new projects on Protractor."
+      - "Bundle budgets in `angular.json` (`initial`, `anyComponentStyle`) gate accidental size regressions; CI fails when budgets are exceeded — relax the budget intentionally, not silently."

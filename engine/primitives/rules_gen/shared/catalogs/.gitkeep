@@ -1,0 +1,6 @@
+# R1 /rules-gen — catalogs directory placeholder.
+#
+# Curated YAML catalogs (bfsi-core, java, aws, ...) land in follow-up R1
+# issues once R1-290 (catalog loader) and R1-291 (renderer) are in place.
+# Each catalog file is named ``<slug>.yaml`` and conforms to the schema in
+# ``primitives/rules_gen/SPEC.md`` §"Catalog YAML schema".

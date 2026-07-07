@@ -1,0 +1,50 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+// TODO: Import the component under test.
+// import { MyComponent } from './my.component';
+
+// Tests for {criterion_id}
+
+describe('{criterion_id}', () => {
+  // TODO: Replace MyComponent with the actual component.
+  // let fixture: ComponentFixture<MyComponent>;
+  // let component: MyComponent;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      // TODO: Declare the component and list imports / providers.
+      declarations: [/* MyComponent */],
+      providers: [
+        // TODO: Stub dependencies, e.g.:
+        // { provide: MyService, useValue: { getData: jasmine.createSpy('getData').and.returnValue([]) } },
+      ],
+    }).compileComponents();
+
+    // fixture = TestBed.createComponent(MyComponent);
+    // component = fixture.componentInstance;
+    // fixture.detectChanges();
+  });
+
+  it('renders correctly on happy path', () => {
+    // Arrange
+    // TODO: Set preconditions on component inputs or spy return values.
+
+    // Act
+    // fixture.detectChanges();
+    // TODO: Trigger the behaviour under test, e.g.:
+    // component.someMethod();
+
+    // Assert
+    // TODO: Query the DOM or inspect component state, e.g.:
+    // expect(fixture.nativeElement.querySelector('.title').textContent).toContain('Hello');
+  });
+
+  it('throws on invalid input', () => {
+    // Arrange
+    // TODO: Set up a state or input that should cause an error.
+
+    // Act / Assert
+    expect(() => {
+      // TODO: Call the method that should throw.
+    }).toThrow(); // TODO: optionally pass the expected error message or class.
+  });
+});

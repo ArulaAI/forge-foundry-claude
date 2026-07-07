@@ -1,0 +1,63 @@
+{# M6 /mod-synth-logs Phase C — cics_transaction renderer body (M6-TEMPLATE-2 / #470).
+
+   This template renders the *body* of the ``_render_cics_transaction()``
+   function emitted into ``generate_logs.py``. It is included by
+   ``generate_logs.py.j2`` via the ``cics_transaction_body`` context
+   variable that ``render.py::_render_cics_transaction`` produces.
+
+   Output line shape (per issue #470 acceptance):
+
+       <timestamp> <trans_id> <program_name> <user_id> <terminal_id> <duration_ms> <abend_code|OK>
+
+   - ``timestamp``: ISO-8601 UTC, spaced linearly across the spec window.
+   - ``trans_id``: drawn from ``entities_digest["transactions"]``.
+   - ``program_name``: drawn from ``entities_digest["programs"]``.
+   - ``user_id``: synthesised as ``USER{NN:02d}`` (closed pool of 20).
+   - ``terminal_id``: synthesised as ``T{NNN:03d}`` (closed pool of 50).
+   - ``duration_ms``: log-normal-ish jitter via ``rng.randint(5, 500)``.
+   - ``abend_code``: 99.5% ``OK``, 0.5% one of ASRA/AEY9/AEIO/AFCR.
+
+   Anti-hallucination (design spec §"Anti-hallucination" layer 1):
+   every transaction ID and program name in the rendered output is
+   sampled from the closed catalog in ``entities_digest``. Empty
+   catalogs produce empty output (no synthesised names).
+
+   Determinism: the rendered body uses only ``rng`` (the per-file
+   ``random.Random``) for sampling and jitter, so re-running with the
+   same seed produces the identical byte stream.
+#}
+from datetime import datetime, timedelta, timezone
+
+transactions = list(entities_digest.get("transactions", []))
+programs = list(entities_digest.get("programs", []))
+if not transactions or not programs:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+abend_pool = ("ASRA", "AEY9", "AEIO", "AFCR")
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    trans_id = rng.choice(transactions)
+    program = rng.choice(programs)
+    user_id = f"USER{rng.randint(1, 20):02d}"
+    terminal_id = f"T{rng.randint(1, 50):03d}"
+    duration_ms = rng.randint(5, 500)
+    if rng.random() < 0.005:
+        outcome = rng.choice(abend_pool)
+    else:
+        outcome = "OK"
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"{trans_id} {program} {user_id} {terminal_id} "
+        f"{duration_ms} {outcome}"
+    )
+return "\n".join(lines) + "\n"

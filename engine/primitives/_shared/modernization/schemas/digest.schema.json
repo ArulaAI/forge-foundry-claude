@@ -1,0 +1,114 @@
+{
+  "additionalProperties": false,
+  "description": "The \u22641.5k-token compressed view of one unit's facts.\n\nProduced by :func:`primitives._shared.modernization.digest.compress`. Carries\nname-only interface/entity lists and counts (never full records) so a model\ncan reason across many units in one context without re-reading any\n``facts.json`` (\u00a72 two-artifact discipline).",
+  "properties": {
+    "code_root": {
+      "title": "Code Root",
+      "type": "string"
+    },
+    "consumed_interfaces": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Consumed Interfaces",
+      "type": "array"
+    },
+    "debt_summary": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Debt Summary",
+      "type": "array"
+    },
+    "domains": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Domains",
+      "type": "array"
+    },
+    "exposed_interfaces": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Exposed Interfaces",
+      "type": "array"
+    },
+    "flavor": {
+      "title": "Flavor",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "key_entities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Key Entities",
+      "type": "array"
+    },
+    "loc_by_language": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Loc By Language",
+      "type": "object"
+    },
+    "migration_state": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Migration State"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shared_component_count": {
+      "default": 0,
+      "title": "Shared Component Count",
+      "type": "integer"
+    },
+    "shared_components": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Shared Components",
+      "type": "array"
+    },
+    "tier_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tier Hint"
+    },
+    "unit_count": {
+      "default": 0,
+      "title": "Unit Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "code_root",
+    "flavor"
+  ],
+  "title": "ModernizationDigest",
+  "type": "object"
+}

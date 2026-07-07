@@ -1,0 +1,39 @@
+# C6 /confidence-gate — built-in gate policy defaults (#735).
+#
+# Stage B (deterministic blast-radius model) loads the policy from `--policy PATH`,
+# else `.foundry/gate-policy.yaml` if present, else THESE defaults. A supplied
+# policy file merges its overrides onto these. Per-source contributed score =
+# Σ over findings of `severity_weight × confidence_weight × primitive_weight`;
+# the aggregate risk score maps to a verdict against `thresholds`. These values
+# are the canonical contract shared with `shared/policy_loader.py` — keep in lockstep.
+
+severity_weights:
+  low: 1.0
+  medium: 4.0
+  high: 10.0
+  critical: 25.0
+
+confidence_weights:
+  low: 0.3
+  medium: 0.7
+  high: 1.0
+
+# Review-class sources weight 1.0; the C10/C11 AI-quality sources weight 1.5.
+primitive_weights:
+  c4_code_review: 1.0
+  c5_spec_validate: 1.0
+  c8_architecture_review: 1.0
+  s10_threat_model: 1.0
+  s11_security_review: 1.0
+  s20_cloud_arch_review: 1.0
+  s30_frontend_design: 1.0
+  s40_api_contract_review: 1.0
+  s60_data_flow_map: 1.0
+  s70_compliance_map: 1.0
+  c10_failure_mode_audit: 1.5
+  c11_production_failure_audit: 1.5
+
+# score < pass → pass; pass ≤ score < review → review; score ≥ review → fail.
+thresholds:
+  pass: 20.0
+  review: 50.0

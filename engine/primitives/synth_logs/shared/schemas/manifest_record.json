@@ -1,0 +1,234 @@
+{
+  "$defs": {
+    "GeneratedFileRecord": {
+      "additionalProperties": false,
+      "description": "One emitted log file's path + content sha256 + format.\n\nThe ``ManifestRecord`` lists one of these per ten emitted log files.\n``sha256`` is the hex-encoded digest of the file's bytes; downstream\nconsumers can verify the script's output matches the manifest without\nre-running it.",
+      "properties": {
+        "format": {
+          "enum": [
+            "cics_transaction",
+            "cics_access",
+            "network",
+            "database",
+            "enterprise_server",
+            "downstream_calls",
+            "upstream_requests",
+            "cics_queues",
+            "metrics",
+            "security_audit"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "format"
+      ],
+      "title": "GeneratedFileRecord",
+      "type": "object"
+    },
+    "IncidentEvent": {
+      "additionalProperties": false,
+      "description": "A single scheduled event on the Phase B 72-hour timeline.\n\n``event_kind`` is the closed Literal that drives template selection\nin Phase C; ``timestamp`` pins the event onto the deterministic\ntimeline (UTC). ``affected_programs`` and ``cascade_targets`` are\ndrawn from the Phase A ``EntitiesDigest.programs`` set \u2014\nPhase B's anti-hallucination guard (design spec \u00a7\"Anti-hallucination\"\nlayer 2). ``expected_log_correlations`` lists the ``LogFormat`` values\nin which Phase D expects to find this event's task IDs cross-referenced\n(e.g. a ``vsam_contention`` root cause should appear in\n``cics_transaction``, ``database``, and ``cics_queues``).",
+      "properties": {
+        "affected_programs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Programs",
+          "type": "array"
+        },
+        "cascade_targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cascade Targets",
+          "type": "array"
+        },
+        "event_kind": {
+          "enum": [
+            "vsam_contention",
+            "cics_abend",
+            "batch_overrun",
+            "network_drop",
+            "recovery"
+          ],
+          "title": "Event Kind",
+          "type": "string"
+        },
+        "expected_log_correlations": {
+          "items": {
+            "enum": [
+              "cics_transaction",
+              "cics_access",
+              "network",
+              "database",
+              "enterprise_server",
+              "downstream_calls",
+              "upstream_requests",
+              "cics_queues",
+              "metrics",
+              "security_audit"
+            ],
+            "type": "string"
+          },
+          "title": "Expected Log Correlations",
+          "type": "array"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_kind",
+        "timestamp"
+      ],
+      "title": "IncidentEvent",
+      "type": "object"
+    },
+    "ValidationReport": {
+      "additionalProperties": false,
+      "description": "Phase D's aggregate validation report.\n\n``rules`` carries one ``ValidationRuleResult`` per\n``ValidationRuleKind`` literal (Phase D evaluates the closed set);\n``correlation_rate`` is the per-run cross-file task-ID correlation\nrate (floor 0.95 by default \u2014 design spec \u00a7\"Anti-hallucination\").\n``validation_status`` is the headline boolean every consumer\ndashboard reads.",
+      "properties": {
+        "correlation_rate": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Correlation Rate",
+          "type": "number"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/ValidationRuleResult"
+          },
+          "title": "Rules",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "validation_status": {
+          "title": "Validation Status",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "correlation_rate",
+        "validation_status"
+      ],
+      "title": "ValidationReport",
+      "type": "object"
+    },
+    "ValidationRuleResult": {
+      "additionalProperties": false,
+      "description": "Per-rule outcome row inside a ``ValidationReport``.\n\n``passed`` is the hard boolean Phase D's exit-code arithmetic reads\n(a single ``False`` here trips exit code 4 or 6 depending on which\nrule fired \u2014 design spec \u00a7\"CLI exit codes\"). ``checked`` is the\nsample count Phase D evaluated against (e.g. the 20 random task IDs\nfor ``transaction_id_correlation``); ``violations`` is the count of\nfailures inside that sample; ``examples`` is a bounded list of\nviolation strings used to surface failures in the audit output\nwithout dumping the full violation set (each example is a short\nhuman-readable diagnostic \u2014 e.g. ``\"PROG_FOO referenced in\ncics-transaction.log:482 not in entities.json\"``).",
+      "properties": {
+        "checked": {
+          "minimum": 0,
+          "title": "Checked",
+          "type": "integer"
+        },
+        "examples": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "rule": {
+          "enum": [
+            "timeline_consistency",
+            "ip_port_consistency",
+            "transaction_id_correlation",
+            "content_accuracy"
+          ],
+          "title": "Rule",
+          "type": "string"
+        },
+        "violations": {
+          "minimum": 0,
+          "title": "Violations",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rule",
+        "passed",
+        "checked",
+        "violations"
+      ],
+      "title": "ValidationRuleResult",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The top-level record written to ``{--output-dir}/logs-manifest.json``.\n\nEmbeds the ``ScenarioPlan`` metadata the run was driven by, the\n``ValidationReport`` Phase D produced, the per-file sha256 list\n(``generated_files``), and the day-3 incident correlation summary\n(``expected_day3_incident_correlations``) \u2014 the ``IncidentEvent``s\nPhase B scheduled on day 3 that Phase D verified actually correlated\nacross the expected log files (design spec \u00a7\"File contracts\", row\n``M6 \u2192 user (audit)``).",
+  "properties": {
+    "expected_day3_incident_correlations": {
+      "items": {
+        "$ref": "#/$defs/IncidentEvent"
+      },
+      "title": "Expected Day3 Incident Correlations",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "generated_files": {
+      "items": {
+        "$ref": "#/$defs/GeneratedFileRecord"
+      },
+      "title": "Generated Files",
+      "type": "array"
+    },
+    "scenario": {
+      "enum": [
+        "baseline",
+        "peak",
+        "incident"
+      ],
+      "title": "Scenario",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationReport"
+    }
+  },
+  "required": [
+    "scenario",
+    "seed",
+    "validation"
+  ],
+  "title": "ManifestRecord",
+  "type": "object"
+}

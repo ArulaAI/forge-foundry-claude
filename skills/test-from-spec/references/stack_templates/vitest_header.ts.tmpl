@@ -1,0 +1,42 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+// TODO: Import the module under test.
+// import { myFunction } from '../src/myModule';
+
+// TODO: Uncomment to mock a module dependency.
+// vi.mock('../src/myDependency', () => ({ default: vi.fn() }));
+
+// Tests for {criterion_id}
+
+describe('{criterion_id}', () => {
+  // TODO: Declare shared mock / stub variables here.
+  let mockDep: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    // TODO: Reset mocks and set up fresh state before each test.
+    mockDep = vi.fn();
+    vi.clearAllMocks();
+  });
+
+  it('handles the happy path', () => {
+    // Arrange
+    // TODO: Set up preconditions and expected values.
+
+    // Act
+    // TODO: Call the unit under test, e.g.:
+    const result = undefined; // TODO: replace with actual call
+
+    // Assert
+    // TODO: Replace with the actual assertion, e.g.:
+    expect(result).toBeDefined();
+  });
+
+  it('throws on invalid input', () => {
+    // Arrange
+    // TODO: Prepare inputs that should cause an error.
+
+    // Act / Assert
+    expect(() => {
+      // TODO: Replace with the call that should throw.
+    }).toThrow(); // TODO: optionally pass the expected error message or class.
+  });
+});

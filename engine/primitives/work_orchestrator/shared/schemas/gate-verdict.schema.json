@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-orchestrator-gate-verdict",
+  "title": "C7 node-gate rationale",
+  "description": "The node-gate model response (spec §3.1). The node-gate recommendation is computed DETERMINISTICALLY by the control plane (gating.node_gate) from the leaf's review + intent-review + spec-validate verdicts (#987); the model contributes ONLY a short `rationale`. The `recommendation` field was removed from this schema (#1009) because the control plane ignored it — embedding the enum on every node-gate round was wasted tokens. The tree-gate is a pure-Python computation and emits no model round.",
+  "type": "object",
+  "required": ["rationale"],
+  "additionalProperties": false,
+  "properties": {
+    "rationale": {
+      "type": "string",
+      "description": "One or two sentences explaining the (Python-computed) recommendation, grounded in the underlying review/intent/spec-validate findings. This is the ONLY model judgment the node-gate consumes (spec §3.1)."
+    }
+  }
+}

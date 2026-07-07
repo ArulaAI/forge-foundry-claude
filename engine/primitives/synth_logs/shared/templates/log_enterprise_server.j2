@@ -1,0 +1,76 @@
+{# M6 /mod-synth-logs Phase C — enterprise_server renderer body (M6-TEMPLATE-3 / #471).
+
+   This template renders the *body* of ``_render_enterprise_server()``
+   emitted into ``generate_logs.py``. It is included by
+   ``generate_logs.py.j2`` via the ``enterprise_server`` entry in the
+   ``rendered_bodies`` dict that ``render.py::_render_enterprise_server``
+   produces.
+
+   Rocket Enterprise Server / CICS region log — system-level events
+   covering startup messages, region warnings, and system-task lifecycle
+   (BankDemo reference ``synth-logs-generate.md`` §"LOG FILE 5").
+
+   Output line shape:
+
+       <timestamp> ES LEVEL=<INFO|WARN|ERROR> SUBJECT=<program|file> MSG=<event>
+
+   - ``timestamp``: ISO-8601 UTC, spaced linearly across the spec window.
+   - ``LEVEL``: weighted choice — INFO dominates (94%), WARN 5%, ERROR 1%
+     — reflecting steady-state region health with occasional warnings.
+   - ``SUBJECT``: 60% drawn from ``entities_digest["programs"]`` (program
+     load / status events), 40% from ``entities_digest["files"]`` (VSAM
+     open / close / contention events).
+   - ``MSG``: bucket-selected based on LEVEL — INFO produces lifecycle
+     messages (``program_loaded``, ``file_opened``, ``listener_ready``),
+     WARN produces pressure messages (``storage_high``, ``maxtask_near``),
+     ERROR produces failure messages (``file_contention``, ``maxtask_reached``).
+
+   Anti-hallucination (design spec §"Anti-hallucination" layer 1):
+   every program and file name in the rendered output is sampled from
+   the closed catalog in ``entities_digest``. Both empty catalogs
+   produce empty output.
+
+   Determinism: the rendered body uses only ``rng`` (the per-file
+   ``random.Random``) for sampling and jitter, so re-running with the
+   same seed produces the identical byte stream.
+#}
+from datetime import datetime, timedelta, timezone
+
+programs = list(entities_digest.get("programs", []))
+files = list(entities_digest.get("files", []))
+if not programs and not files:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+level_pool = ("INFO",) * 94 + ("WARN",) * 5 + ("ERROR",) * 1
+info_msgs = ("program_loaded", "file_opened", "listener_ready", "region_ready")
+warn_msgs = ("storage_high", "maxtask_near", "queue_depth_high")
+error_msgs = ("file_contention", "maxtask_reached", "storage_shortage")
+
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    level = rng.choice(level_pool)
+    if level == "INFO":
+        msg = rng.choice(info_msgs)
+    elif level == "WARN":
+        msg = rng.choice(warn_msgs)
+    else:
+        msg = rng.choice(error_msgs)
+    if programs and (not files or rng.random() < 0.6):
+        subject = rng.choice(programs)
+    else:
+        subject = rng.choice(files)
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"ES LEVEL={level} SUBJECT={subject} MSG={msg}"
+    )
+return "\n".join(lines) + "\n"

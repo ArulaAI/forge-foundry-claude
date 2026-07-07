@@ -1,0 +1,64 @@
+# R1 /rules-gen catalog — Azure Well-Architected for IaC.
+#
+# Path-scoped to Terraform (.tf), Bicep (.bicep), and ARM templates
+# (.json). Maps the five Azure Well-Architected pillars (Reliability,
+# Security, Cost Optimization, Operational Excellence, Performance
+# Efficiency) onto concrete IaC patterns. Each section names the Azure
+# services + Terraform / Bicep resource types the rule applies to.
+name: azure
+description: "Azure Well-Architected: Entra ID, Key Vault, NSG, availability zones, Azure Policy"
+version: "1.0.0"
+paths:
+  - "**/*.tf"
+  - "**/*.bicep"
+  - "**/*.json"
+sections:
+  - heading: "Security pillar: Entra ID, managed identities, and identity governance"
+    rules:
+      - "Use managed identities (system-assigned where possible, user-assigned for shared access) — never connection strings with embedded secrets. Terraform: `azurerm_user_assigned_identity` + `identity { type = \"UserAssigned\" }` block on the consuming resource."
+      - "Service principals authenticate via federated credentials (`azurerm_federated_identity_credential`) for GitHub Actions / GitLab CI workload identity — long-lived client secrets are an anti-pattern, rotated only by force."
+      - "Conditional Access policies enforce MFA + device compliance + sign-in risk for every administrative role; legacy authentication protocols (POP, IMAP, SMTP) are blocked at the tenant level."
+      - "Privileged Identity Management (PIM) elevates admin roles just-in-time with time-bounded activation (typically ≤ 4 hours) and approval workflow; permanent assignment to Global Administrator / Owner is a finding."
+      - "Entra ID role assignments are visible in the Terraform / Bicep tree (`azurerm_role_assignment`) — out-of-band portal grants drift the live environment from IaC and are forbidden."
+      - "Azure RBAC at the resource / resource group / subscription scope follows least privilege; custom roles (`azurerm_role_definition`) when no built-in role fits — `Owner` is forbidden on resource scopes, `Contributor` reviewed quarterly."
+      - "Disable local authentication on PaaS services where Entra ID auth is available: Storage (`shared_access_key_enabled = false`), SQL DB (`azuread_administrator` + disable SQL auth), Cosmos DB (`local_authentication_disabled = true`), Event Hub, Service Bus."
+
+  - heading: "Security pillar: Key Vault, encryption, and secret management"
+    rules:
+      - "Secrets, keys, and certificates live in Azure Key Vault (`azurerm_key_vault` with `purge_protection_enabled = true` and `soft_delete_retention_days = 90`); never in Terraform variables, Bicep parameters, or application settings as plain text."
+      - "Key Vault access uses RBAC (`enable_rbac_authorization = true`) — the legacy access-policy model is grandfathered only; RBAC composes with Entra ID conditional access and PIM."
+      - "Customer-Managed Keys (CMK) encrypt regulated-data services (Storage, SQL, Cosmos, Synapse, AKS etcd, ADLS Gen2); platform-managed keys are acceptable for non-regulated workloads. Double Encryption (infrastructure + service) for the highest-sensitivity workloads."
+      - "Storage accounts disable public network access (`public_network_access_enabled = false`) and require Private Endpoints; the `network_rules` block defaults to `Deny` and explicitly allowlists trusted subnets + service endpoints."
+      - "TLS minimum version is 1.2 on every Azure service that exposes it (`min_tls_version = \"TLS1_2\"` on Storage, App Service, Function App, SQL Server); TLS 1.0 / 1.1 listeners are findings."
+      - "Azure Disk Encryption (ADE) or host-based encryption + CMK encrypts VM OS / data disks; unmanaged disks are forbidden."
+      - "App Service / Function App custom domains use App Service Managed Certificates or Key Vault certificates; never upload PFX files manually — they drift from IaC."
+
+  - heading: "Network security: NSGs, Private Endpoints, and Azure Firewall"
+    rules:
+      - "Network Security Groups (NSGs) attach to subnets (preferred) and / or NICs; rules are deny-by-default with explicit allows for application ports. Service Tags (`AzureCloud`, `Storage`, `Sql`) replace IP-address ranges that change."
+      - "Application Security Groups (ASGs) replace IP-based source / destination in NSG rules when the workload spans multiple VMs / VM Scale Sets — easier to maintain as the fleet grows."
+      - "Private Endpoints (`azurerm_private_endpoint`) for every PaaS service that supports them (Storage, SQL, Cosmos, Key Vault, Service Bus, etc.); public network access disabled on the underlying service."
+      - "Azure Firewall (Premium SKU) for outbound egress filtering with IDPS + TLS inspection enabled; Hub-and-spoke topology with the Firewall in the hub and forced tunneling from spokes."
+      - "DDoS Protection Standard enabled on production virtual networks (`azurerm_network_ddos_protection_plan` linked to VNet); the free Basic tier covers only volumetric attacks at the platform edge."
+      - "Application Gateway WAF v2 in front of public-facing web apps; OWASP Core Rule Set 3.2+ enabled with bot protection. Front Door + WAF for global / multi-region apps."
+      - "No public IPs on VMs in production — bastion (`azurerm_bastion_host` with the Standard SKU) or Just-In-Time VM access via Defender for Cloud."
+
+  - heading: "Reliability: availability zones, redundancy, and disaster recovery"
+    rules:
+      - "Production workloads use Availability Zones (`zones = [\"1\", \"2\", \"3\"]` on VMSS, AKS, App Service Premium v3, SQL DB Business Critical) — Availability Sets are grandfathered and don't survive zonal outages."
+      - "Storage accounts use ZRS (Zone-Redundant Storage) or GZRS (Geo-Zone-Redundant) replication for production; LRS is acceptable only for non-critical or geo-replicated-at-the-app-layer data."
+      - "SQL Database / Managed Instance use Business Critical tier with `zone_redundant = true` AND `read_scale = true`; geo-replication or failover groups for cross-region DR with documented RPO / RTO."
+      - "Cosmos DB multi-region writes (`enable_multiple_write_locations = true`) for global-scale apps; consistency level (`Strong`, `BoundedStaleness`, `Session`, `Eventual`) chosen explicitly — `Session` is the right default."
+      - "Azure Site Recovery (ASR) replicates VM workloads for cross-region DR; runbook-tested failover at least quarterly. Azure Backup with long-term retention for compliance-mandated retention windows."
+      - "Front Door / Traffic Manager routes traffic with health-probe-driven failover; `connection_draining` on Application Gateway lets in-flight requests complete during deployment."
+      - "App Service / Function App run with `always_on = true` (production) and at least 2 instances; AKS node pools span zones with PodDisruptionBudgets for graceful node maintenance."
+
+  - heading: "Governance: Azure Policy, cost, and operational excellence"
+    rules:
+      - "Azure Policy enforces non-negotiable guardrails (no public IPs, enforced tags, allowed regions, allowed SKUs) at the management group level; CI runs `az policy state list --filter \"complianceState eq 'NonCompliant'\"` before promoting infra changes."
+      - "Tag every resource with `costCenter`, `environment`, `owner`, `application`, `dataClassification`; Azure Policy's `Inherit a tag` and `Require a tag` policies enforce coverage."
+      - "Azure Cost Management budgets (`azurerm_consumption_budget_subscription`) alert at 50% / 80% / 100% of monthly budget per subscription / resource group; anomaly detection on per-service trends."
+      - "Use Azure Hybrid Benefit for Windows Server / SQL Server licenses on Azure VMs and SQL DB — 40-60% cost savings on eligible workloads. Reserved Instances / Savings Plans cover steady-state compute; Spot VMs for interruptible workloads."
+      - "Resource locks (`azurerm_management_lock` with `CanNotDelete` or `ReadOnly`) on production-critical resources (Key Vault, Storage Account holding state, network hub) prevent accidental destruction by IaC drift or portal mistakes."
+      - "Azure Monitor (Log Analytics workspace + Application Insights) is the centralized observability surface; diagnostic settings (`azurerm_monitor_diagnostic_setting`) route platform logs from every resource to the workspace with retention matching the compliance policy."
+      - "Microsoft Defender for Cloud at the Standard tier (or higher) on every subscription; Secure Score is tracked and improved over time. Defender plans for Servers, App Service, Storage, SQL, Kubernetes, Key Vault, Containers as applicable."

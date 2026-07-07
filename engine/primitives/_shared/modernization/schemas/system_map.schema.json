@@ -1,0 +1,107 @@
+{
+  "$defs": {
+    "SystemMapEdge": {
+      "additionalProperties": false,
+      "description": "A directed dependency ``src \u2192 dst`` with provenance.\n\n``confidence`` grades how the match was made: ``exact`` (an exact\nconsumed\u2194exposed / shared-coordinate / messaging name match), ``heuristic``\n(a normalized/fuzzy match), or ``unresolved`` (``dst`` is an external/unknown\nnode \u2014 the consumed interface matched no unit's exposed surface). ``evidence``\nnames the matched coordinate(s).",
+      "properties": {
+        "confidence": {
+          "default": "exact",
+          "enum": [
+            "exact",
+            "heuristic",
+            "unresolved"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "dst": {
+          "title": "Dst",
+          "type": "string"
+        },
+        "evidence": {
+          "default": "",
+          "title": "Evidence",
+          "type": "string"
+        },
+        "kind": {
+          "default": "",
+          "title": "Kind",
+          "type": "string"
+        },
+        "src": {
+          "title": "Src",
+          "type": "string"
+        }
+      },
+      "required": [
+        "src",
+        "dst"
+      ],
+      "title": "SystemMapEdge",
+      "type": "object"
+    },
+    "SystemMapNode": {
+      "additionalProperties": false,
+      "description": "One unit in the cross-unit graph.",
+      "properties": {
+        "domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "default": "",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "SystemMapNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The joined cross-unit dependency graph (``correlate.py`` output).",
+  "properties": {
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/SystemMapEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/SystemMapNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "title": "SystemMap",
+  "type": "object"
+}

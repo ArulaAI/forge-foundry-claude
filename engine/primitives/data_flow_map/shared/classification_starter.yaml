@@ -1,0 +1,233 @@
+# classification_starter.yaml — S60 /data-flow-map default PII field catalog
+#
+# Sources:
+#   - NIST SP 800-122 §2.1 (Personally Identifiable Information definition)
+#   - OWASP Testing Guide v4.2 — Appendix C (sensitive data categories)
+#   - GDPR Recitals 26, 34, 51 (PII / special-category / pseudonymous data)
+#   - PCI-DSS v4.0 §3 (Cardholder data / sensitive authentication data)
+#
+# Schema per entry:
+#   pattern:        Python regex (case-insensitive via (?i) prefix)
+#   classification: pii | pci | phi | internal | public
+#   category:       identity | contact | government_id | payment_account |
+#                   payment_auth | medical | financial_account | address |
+#                   credential | biometric | behavioral | location
+#   severity:       low | medium | high | critical
+#
+# Custom overrides: pass --classification path/to/custom.yaml.
+# Entries are merged by pattern; custom wins on conflict.
+
+fields:
+  # ── Identity ──────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(email|email_address|user_email|emailaddress|email_addr)\\b"
+    classification: pii
+    category: identity
+    severity: medium
+    note: "NIST 800-122 §2.1: email = direct PII"
+
+  - pattern: "(?i)\\b(full_name|fullname|display_name|real_name|legal_name|name_full)\\b"
+    classification: pii
+    category: identity
+    severity: medium
+    note: "GDPR Recital 26: name qualifies as PII"
+
+  - pattern: "(?i)\\b(first_name|firstname|given_name|forename)\\b"
+    classification: pii
+    category: identity
+    severity: low
+    note: "GDPR Recital 26: partial name; combined with other data = PII"
+
+  - pattern: "(?i)\\b(last_name|lastname|surname|family_name)\\b"
+    classification: pii
+    category: identity
+    severity: low
+    note: "GDPR Recital 26: partial name"
+
+  - pattern: "(?i)\\b(username|user_name|login_name|screen_name|handle)\\b"
+    classification: pii
+    category: identity
+    severity: low
+    note: "OWASP: username can identify individual in context"
+
+  - pattern: "(?i)\\b(user_id|userid|account_id|member_id|customer_id|client_id)\\b"
+    classification: internal
+    category: identity
+    severity: low
+    note: "Internal identifier; severity escalates if joined with PII"
+
+  # ── Contact ───────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(phone|phone_number|mobile|mobile_number|cellphone|telephone|tel|phone_num)\\b"
+    classification: pii
+    category: contact
+    severity: medium
+    note: "NIST 800-122 §2.1: phone = direct PII"
+
+  - pattern: "(?i)\\b(fax|fax_number|fax_num)\\b"
+    classification: pii
+    category: contact
+    severity: low
+    note: "NIST 800-122: fax number = PII"
+
+  # ── Government ID ─────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(ssn|social_security|social_security_number|tax_id|sin|nino|national_id)\\b"
+    classification: pii
+    category: government_id
+    severity: critical
+    note: "NIST 800-122 §2.2: SSN = high-sensitivity PII; GDPR Recital 51 special category"
+
+  - pattern: "(?i)\\b(passport|passport_number|passport_no)\\b"
+    classification: pii
+    category: government_id
+    severity: critical
+    note: "GDPR Recital 51: government-issued ID document"
+
+  - pattern: "(?i)\\b(drivers_license|driver_license|driving_license|license_number|dl_number)\\b"
+    classification: pii
+    category: government_id
+    severity: high
+    note: "NIST 800-122: government-issued identification"
+
+  - pattern: "(?i)\\b(dob|date_of_birth|birth_date|birthdate|birthday|birth_day)\\b"
+    classification: pii
+    category: government_id
+    severity: high
+    note: "NIST 800-122 §2.1: DOB = direct PII; often needed for identity theft"
+
+  # ── Payment Account (PCI-DSS) ──────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(pan|card_number|cardnumber|primary_account_number|credit_card|cc_number|card_num)\\b"
+    classification: pci
+    category: payment_account
+    severity: critical
+    note: "PCI-DSS v4.0 §3: PAN is cardholder data — must not be logged or stored unencrypted"
+
+  - pattern: "(?i)\\b(iban|bank_account|bank_account_number|account_number|routing_number)\\b"
+    classification: pii
+    category: financial_account
+    severity: high
+    note: "GDPR Recital 51: financial account identifiers"
+
+  # ── Payment Auth (PCI-DSS Sensitive Authentication Data) ──────────────────
+
+  - pattern: "(?i)\\b(cvv|cvc|card_security_code|cv2|cavv|csc|verification_value)\\b"
+    classification: pci
+    category: payment_auth
+    severity: critical
+    note: "PCI-DSS v4.0 §3.3: SAD — must never be stored post-auth"
+
+  - pattern: "(?i)\\b(pin|pin_number|card_pin|atm_pin)\\b"
+    classification: pci
+    category: payment_auth
+    severity: critical
+    note: "PCI-DSS v4.0 §3.3: PIN block = Sensitive Authentication Data"
+
+  - pattern: "(?i)\\b(expiry|expiry_date|expiration_date|card_expiry|exp_date|exp_month|exp_year)\\b"
+    classification: pci
+    category: payment_auth
+    severity: high
+    note: "PCI-DSS v4.0 §3: expiration date is cardholder data"
+
+  # ── Medical / HIPAA (PHI) ─────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(diagnosis|medical_record|medical_record_number|mrn|patient_id|patient_record)\\b"
+    classification: phi
+    category: medical
+    severity: critical
+    note: "HIPAA 45 CFR §164.514(b): diagnosis / MRN are PHI identifiers"
+
+  - pattern: "(?i)\\b(prescription|rx_number|medication|drug_name|ndc_code)\\b"
+    classification: phi
+    category: medical
+    severity: critical
+    note: "HIPAA: prescription details = PHI"
+
+  - pattern: "(?i)\\b(health_plan|insurance_id|insurance_member_id|member_number)\\b"
+    classification: phi
+    category: medical
+    severity: high
+    note: "HIPAA 45 CFR §164.514(b): health plan beneficiary number = PHI identifier"
+
+  # ── Address ───────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(street_address|street|address_line|addr_line|mailing_address|home_address)\\b"
+    classification: pii
+    category: address
+    severity: medium
+    note: "NIST 800-122 §2.1: postal address = PII"
+
+  - pattern: "(?i)\\b(zip_code|zipcode|postal_code|postcode|post_code)\\b"
+    classification: pii
+    category: address
+    severity: low
+    note: "NIST 800-122: postal code is quasi-identifier"
+
+  - pattern: "(?i)\\b(city|town|municipality)\\b"
+    classification: pii
+    category: address
+    severity: low
+    note: "NIST 800-122: city alone is quasi-identifier"
+
+  - pattern: "(?i)\\b(country|country_code|nation)\\b"
+    classification: internal
+    category: address
+    severity: low
+    note: "Country is generally public; flag for context"
+
+  # ── Credential ────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(password|passwd|passphrase|user_password|account_password|pass_word)\\b"
+    classification: pii
+    category: credential
+    severity: critical
+    note: "OWASP: plaintext password fields must never be logged or stored unhashed"
+
+  - pattern: "(?i)\\b(secret|api_key|api_secret|access_token|refresh_token|auth_token|bearer_token)\\b"
+    classification: pii
+    category: credential
+    severity: critical
+    note: "OWASP: authentication secrets = high-sensitivity PII"
+
+  - pattern: "(?i)\\b(private_key|private_key_pem|rsa_key|ssh_key|signing_key)\\b"
+    classification: pii
+    category: credential
+    severity: critical
+    note: "OWASP: private cryptographic material"
+
+  # ── Biometric ─────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(fingerprint|fingerprint_hash|biometric|face_id|face_embedding|iris_scan|retinal_scan)\\b"
+    classification: pii
+    category: biometric
+    severity: critical
+    note: "GDPR Art. 9(1): biometric data for identification = special-category data"
+
+  # ── Behavioral ────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(session_id|session_token|device_fingerprint|device_id|browser_fingerprint)\\b"
+    classification: pii
+    category: behavioral
+    severity: medium
+    note: "GDPR Recital 30: online identifiers can enable identification"
+
+  - pattern: "(?i)\\b(ip_address|ip_addr|user_ip|remote_addr|client_ip)\\b"
+    classification: pii
+    category: behavioral
+    severity: medium
+    note: "GDPR Recital 30: IP address = personal data when combined with other info"
+
+  # ── Location ──────────────────────────────────────────────────────────────
+
+  - pattern: "(?i)\\b(latitude|longitude|lat_lng|lat_lon|geolocation|geo_location|coordinates|gps_location)\\b"
+    classification: pii
+    category: location
+    severity: high
+    note: "GDPR: precise geolocation = personal data requiring explicit consent under Art. 6"
+
+  - pattern: "(?i)\\b(location|current_location|home_location|work_location)\\b"
+    classification: pii
+    category: location
+    severity: medium
+    note: "GDPR Recital 75: location data can reveal sensitive inferences"

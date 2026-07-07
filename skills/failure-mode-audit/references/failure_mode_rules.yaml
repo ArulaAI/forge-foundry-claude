@@ -1,0 +1,219 @@
+# Vendored from forge-prowess-primitives@v0.4.0 — see CHANGELOG-VENDOR.md for divergence.
+# Foundry expansion of FM5 lands in Task 11.
+# Failure mode detection rules — data-driven, edited via PR.
+# Schema documented in primitives/failure_mode_audit/SPEC.md.
+
+fm1_hallucinated_deps:
+  name: Hallucinated Dependencies
+  description: |
+    Imports / package refs that don't exist in the project's declared dependencies.
+  detectors:
+    - lang: python
+      kind: import-not-in-deps
+      file_patterns: ["*.py"]
+      manifest_files: ["pyproject.toml", "requirements.txt"]
+    - lang: javascript
+      kind: import-not-in-deps
+      file_patterns: ["*.js", "*.ts", "*.jsx", "*.tsx"]
+      manifest_files: ["package.json"]
+    - lang: java
+      kind: import-not-in-deps
+      file_patterns: ["*.java"]
+      manifest_files: ["pom.xml", "build.gradle", "build.gradle.kts"]
+
+fm2_context_window:
+  name: Context Window Blindness
+  description: |
+    Cross-file refs where the AI likely couldn't have seen the full target.
+    Heuristic: function/class refs where the defining file is > 1500 lines
+    or > 3 directory hops away.
+  detectors:
+    - kind: cross-file-large-target
+      threshold_target_lines: 1500
+      threshold_dir_hops: 3
+
+fm3_training_bias:
+  name: Training Data Bias
+  description: |
+    Stack idioms that look like outdated versions.
+  detectors:
+    - lang: python
+      kind: idiom-mismatch
+      file_patterns: ["*.py"]
+      patterns:
+        - regex: "^\\s*print [^()]"
+          severity: medium
+          msg: "Python 2 print statement in Python 3 codebase"
+        - regex: "raise \\w+, "
+          severity: high
+          msg: "Python 2 raise syntax"
+    - lang: javascript
+      kind: idiom-mismatch
+      file_patterns: ["*.js", "*.jsx", "*.ts", "*.tsx"]
+      patterns:
+        - regex: "createReactClass"
+          severity: medium
+          msg: "Pre-hooks React class-component idiom"
+        - regex: "var\\s+\\w+\\s*="
+          severity: low
+          msg: "var instead of let/const"
+
+fm4_overconfident:
+  name: Overconfident Completions
+  description: |
+    Docstrings/comments asserting behavior the code doesn't deliver.
+    PROMPT-4 (#170) — pattern pack expanded from 3 markers to 12 so the default
+    regex path matches the catalog claim (the prior 3-keyword check was itself an
+    FM4 violation against FM4's own SPEC).
+  detectors:
+    - kind: assertion-without-evidence
+      patterns:
+        - regex: "(?i)\\b(guarantee[sd]?|always works?|never fails?)\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "Confident assertion in comment — verify implementation backs it up"
+        - regex: "(?i)\\b(cannot|can(no|')t) fail\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'cannot fail' is FM4 (overconfident completion) — name the assumption"
+        - regex: "(?i)\\bproduction[ -]ready\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'production-ready' is an FM4 marker unless backed by an SLO + load test"
+        - regex: "(?i)\\bbattle[ -]tested\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'battle-tested' is FM4 unless an incident/run record is cited"
+        - regex: "(?i)\\b(bulletproof|foolproof)\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'bulletproof/foolproof' is FM4 — security/correctness must be argued, not asserted"
+        - regex: "(?i)\\bhandles? (all|every) (case|scenario|edge[ -]case)s?\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'handles all cases' is FM4 — list the cases or downgrade to 'handles the documented cases'"
+        - regex: "(?i)\\bworks? (in|for) (every|all) (scenario|case|context)s?\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'works in every scenario' is FM4 — enumerate the supported scenarios"
+        - regex: "(?i)\\bfully (covers?|handles?|implements?) all\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'fully covers all' is FM4 — narrow to the actual coverage scope"
+        - regex: "(?i)\\bcomprehensive (coverage|solution|handling)\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'comprehensive coverage' is FM4 — point at the catalog the coverage is comprehensive over"
+        - regex: "(?i)\\bexhaustively (covers?|handles?|tested)\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'exhaustively covers/tested' is FM4 unless an enumeration backs it"
+        - regex: "(?i)\\brobustly handles\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'robustly handles' is FM4 — describe the failure modes it tolerates"
+        - regex: "(?i)\\b(100%|completely) (reliable|safe|secure|correct)\\b"
+          severity: medium
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java"]
+          msg: "'100%/completely <claim>' is FM4 — qualify the claim with its assumptions"
+
+fm5_security_propagation:
+  name: Security Vulnerability Propagation
+  description: |
+    Patterns the AI might propagate from training data: hardcoded secrets,
+    SQL string concat, eval, XSS sinks.
+  detectors:
+    - kind: hardcoded-secret
+      patterns:
+        - regex: "(?i)(password|secret|api[_-]?key|token)\\s*=\\s*[\"'][a-zA-Z0-9]{8,}[\"']"
+          severity: critical
+          msg: "Possible hardcoded secret"
+          cwe_id: "CWE-798"
+        - regex: "AKIA[0-9A-Z]{16}"
+          severity: critical
+          msg: "AWS access key"
+          cwe_id: "CWE-798"
+        - regex: "ghp_[a-zA-Z0-9]{36}"
+          severity: critical
+          msg: "GitHub personal access token"
+          cwe_id: "CWE-798"
+        - regex: "sk-ant-[a-zA-Z0-9]{20,}"
+          severity: critical
+          msg: "Anthropic API key"
+          cwe_id: "CWE-798"
+    - kind: sql-injection
+      patterns:
+        - regex: "execute\\s*\\(\\s*[\"'].*\\+\\s*\\w+"
+          severity: high
+          file_patterns: ["*.py", "*.js", "*.ts"]
+          msg: "SQL string concatenation — use parameterized queries"
+          cwe_id: "CWE-89"
+    - kind: code-injection
+      patterns:
+        - regex: "\\beval\\s*\\("
+          severity: high
+          file_patterns: ["*.py", "*.js", "*.ts"]
+          msg: "eval() — prefer safer alternatives"
+          cwe_id: "CWE-95"
+        - regex: "\\bexec\\s*\\("
+          severity: high
+          file_patterns: ["*.py"]
+          msg: "exec() — prefer safer alternatives"
+          cwe_id: "CWE-95"
+    - kind: payment-data
+      patterns:
+        - regex: '(?<![0-9])(4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})(?![0-9])'
+          severity: critical
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java", "*.go", "*.rb"]
+          msg: "Possible cardholder PAN literal — must not be hardcoded (PCI-DSS)"
+          cwe_id: "CWE-311"
+    - kind: weak-crypto-in-security-context
+      patterns:
+        - regex: '(?i)hashlib\.(md5|sha1)\('
+          severity: high
+          file_patterns: ["*.py"]
+          msg: "MD5/SHA1 weak hash — replace with SHA-256+ for security-relevant hashing"
+          cwe_id: "CWE-327"
+        - regex: '(?i)MessageDigest\.getInstance\(\s*[''](MD5|SHA-1|SHA1)['']'
+          severity: high
+          file_patterns: ["*.java"]
+          msg: "MD5/SHA1 weak hash — replace with SHA-256+ for security-relevant hashing"
+          cwe_id: "CWE-327"
+    - kind: insecure-deserialization
+      patterns:
+        - regex: 'yaml\.load\('
+          severity: high
+          file_patterns: ["*.py"]
+          msg: "yaml.load without SafeLoader is unsafe — use yaml.safe_load"
+          cwe_id: "CWE-502"
+        - regex: "ObjectInputStream"
+          severity: high
+          file_patterns: ["*.java"]
+          msg: "Java ObjectInputStream is dangerous — use a JSON or vetted serializer"
+          cwe_id: "CWE-502"
+    - kind: insecure-tls
+      patterns:
+        - regex: 'PROTOCOL_TLSv1(?![\d])|PROTOCOL_SSLv[23]'
+          severity: high
+          file_patterns: ["*.py"]
+          msg: "Legacy TLS/SSL protocol constant — require TLSv1.2 or TLSv1.3"
+          cwe_id: "CWE-326"
+        - regex: 'verify\s*=\s*False'
+          severity: high
+          file_patterns: ["*.py"]
+          msg: "TLS verification disabled — verify=False removes certificate validation"
+          cwe_id: "CWE-295"
+    - kind: jwt-hardcoded
+      patterns:
+        - regex: 'eyJ[A-Za-z0-9+/=._-]{20,}'
+          severity: critical
+          file_patterns: ["*.py", "*.js", "*.ts", "*.java", "*.go"]
+          msg: "Hardcoded JWT detected"
+          cwe_id: "CWE-798"
+    - kind: js-function-constructor
+      patterns:
+        - regex: 'new\s+Function\s*\('
+          severity: high
+          file_patterns: ["*.js", "*.jsx", "*.ts", "*.tsx"]
+          msg: "JavaScript Function constructor allows dynamic code execution — risky"
+          cwe_id: "CWE-95"

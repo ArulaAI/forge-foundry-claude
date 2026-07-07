@@ -1,0 +1,97 @@
+{# M6 /mod-synth-logs Phase C — downstream_calls renderer body (M6-TEMPLATE-3 / #471).
+
+   Renders the body of ``_render_downstream_calls()``. Outbound API calls
+   from CICS to downstream services (BankDemo reference
+   ``synth-logs-generate.md`` §"LOG FILE 6"). Covers CICS program-to-
+   program LINK/XCTL, VSAM ops, EXEC SQL, and REST API calls — emitted
+   as JSON Lines so a downstream log shipper can parse without a custom
+   regex.
+
+   Output line shape (one JSON object per line, sort_keys=True for
+   deterministic byte equality across Python releases):
+
+       {"call_type": "LINK|XCTL|VSAM_READ|EXEC_SQL|HTTP",
+        "direction": "outbound",
+        "duration_ms": <int>,
+        "response": "NORMAL|ERROR",
+        "source_program": "<from entities_digest.programs>",
+        "target": "<file or program — also from entities_digest>",
+        "timestamp": "<ISO-8601 UTC>"}
+
+   - ``call_type``: weighted choice — LINK 35%, VSAM_READ 30%, EXEC_SQL
+     20%, XCTL 10%, HTTP 5% — typical CICS-app egress mix.
+   - ``source_program``: drawn from ``entities_digest["programs"]``.
+   - ``target``: drawn from ``entities_digest["programs"]`` when the call
+     is LINK/XCTL (inter-module coupling), from ``entities_digest["files"]``
+     when VSAM_READ/EXEC_SQL (file or table), or from
+     ``entities_digest["networks_and_ports"]`` when HTTP (REST endpoint).
+   - ``duration_ms``: ``rng.randint(1, 250)`` typical OLTP latency.
+   - ``response``: 99% ``NORMAL``, 1% ``ERROR`` — matches the database
+     template's success/failure mix.
+
+   Anti-hallucination: empty programs list yields empty output (every
+   line needs a ``source_program``). When the chosen call type cannot
+   resolve a target from its bucket (e.g. HTTP picked but
+   ``networks_and_ports`` is empty), the line falls back to a LINK
+   against a different program so the digest is still respected.
+#}
+import json
+from datetime import datetime, timedelta, timezone
+
+programs = list(entities_digest.get("programs", []))
+files = list(entities_digest.get("files", []))
+endpoints = list(entities_digest.get("networks_and_ports", []))
+if not programs:
+    return ""
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+call_type_pool = (
+    ("LINK",) * 7
+    + ("VSAM_READ",) * 6
+    + ("EXEC_SQL",) * 4
+    + ("XCTL",) * 2
+    + ("HTTP",)
+)
+
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    source_program = rng.choice(programs)
+    call_type = rng.choice(call_type_pool)
+    if call_type in ("LINK", "XCTL") and len(programs) >= 2:
+        target = rng.choice(programs)
+        while target == source_program:
+            target = rng.choice(programs)
+    elif call_type in ("VSAM_READ", "EXEC_SQL") and files:
+        target = rng.choice(files)
+    elif call_type == "HTTP" and endpoints:
+        target = rng.choice(endpoints)
+    elif len(programs) >= 2:
+        call_type = "LINK"
+        target = rng.choice(programs)
+        while target == source_program:
+            target = rng.choice(programs)
+    else:
+        call_type = "LINK"
+        target = source_program
+    duration_ms = rng.randint(1, 250)
+    response = "ERROR" if rng.random() < 0.01 else "NORMAL"
+    record = {
+        "call_type": call_type,
+        "direction": "outbound",
+        "duration_ms": duration_ms,
+        "response": response,
+        "source_program": source_program,
+        "target": target,
+        "timestamp": ts.replace(tzinfo=timezone.utc).isoformat(),
+    }
+    lines.append(json.dumps(record, sort_keys=True))
+return "\n".join(lines) + "\n"

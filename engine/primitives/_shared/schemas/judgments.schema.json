@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JudgmentsEnvelope",
+  "type": "object",
+  "required": ["schema_version", "primitive", "round", "items"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "primitive": {"type": "string"},
+    "round": {"type": "integer", "minimum": 1},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "response"],
+        "properties": {
+          "id": {"type": "string"},
+          "response": {}
+        }
+      }
+    }
+  }
+}

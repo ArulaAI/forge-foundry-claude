@@ -1,0 +1,87 @@
+---
+# C1 /spec-write — engineering-focused interview question bank
+# Vendored from forge-prowess-primitives@v0.4.0 (F5) — evolved for engineering rigor.
+# Changes vs F5: all 12 questions replaced with architecture/ops/observability/risk focus.
+#
+# Ordered: goal → users/constraints → architecture → file scope → acceptance criteria
+#          → risks → rollback → observability → testing → compliance → decisions → rollout
+#
+# The interviewer asks these one at a time, passing all prior answers as context
+# with each subsequent question so the LLM can provide a coherent expansion.
+
+questions:
+  - id: q01_goal
+    prompt: "What is the single primary goal of this feature or system? State it in one sentence."
+    purpose: "Establishes the north-star statement for the spec Goal section"
+
+  - id: q02_users_constraints
+    prompt: >
+      Who are the users of this feature and what are their constraints?
+      Include latency budget, accessibility requirements, compliance obligations, and any
+      SLA commitments.
+    purpose: "Grounds the goal in real user needs and non-negotiable constraints"
+
+  - id: q03_architecture
+    prompt: >
+      What is the high-level architecture? Describe the services, data flow, and
+      technology choices. Name any third-party APIs or infrastructure dependencies.
+    purpose: "Seeds the Architecture section; identifies key components and data flow"
+
+  - id: q04_file_scope
+    prompt: >
+      What new files or modules will be created? What existing files will change?
+      List concrete paths where possible.
+    purpose: "Populates the File structure section with concrete change scope"
+
+  - id: q05_acceptance_criteria
+    prompt: >
+      What are the acceptance criteria? Give at least three specific, measurable,
+      falsifiable conditions for 'done'. Each must be independently verifiable by
+      an automated test or a reproducible manual check.
+    purpose: "Forces falsifiable success conditions before implementation starts"
+
+  - id: q06_risks
+    prompt: >
+      What are the top 3-5 risks — technical, security, and operational?
+      For each, estimate likelihood (Low/Med/High) and impact, and propose a mitigation.
+    purpose: "Populates the Risks section with depth across all risk dimensions"
+
+  - id: q07_rollback
+    prompt: >
+      What is the rollback plan if this change breaks production?
+      Include estimated time-to-rollback, data migration reversal if needed, and
+      who approves the decision.
+    purpose: "Makes the operational safety plan explicit before code is written"
+
+  - id: q08_observability
+    prompt: >
+      What observability is required? List specific metrics (with units), distributed traces,
+      structured log fields, and dashboards. What alert thresholds will fire?
+    purpose: "Ensures the feature ships with production-grade instrumentation"
+
+  - id: q09_testing_strategy
+    prompt: >
+      What is the testing strategy? Give approximate budgets across unit, contract,
+      integration, and end-to-end layers. Name any test doubles, fixture data needs,
+      or external service stubs required.
+    purpose: "Makes the test strategy explicit; identifies gaps early"
+
+  - id: q10_compliance
+    prompt: >
+      What are the compliance and regulatory considerations?
+      Address PCI-DSS, GDPR, SOX, HIPAA, or any domain-specific regulation that
+      applies. Call out data residency, retention, and audit-log requirements.
+    purpose: "Surfaces compliance requirements before implementation so they shape the design"
+
+  - id: q11_decisions
+    prompt: >
+      What decisions are already made (with rationale) and must not be re-litigated?
+      Also list what is still open and needs reviewer input before implementation starts.
+    purpose: "Populates both halves of the Decision log"
+
+  - id: q12_rollout
+    prompt: >
+      What is the rollout plan? Describe the release mechanism: feature flag, canary,
+      blue/green, dark launch, or immediate full deploy. Include any prerequisite
+      infra changes and the sequence of environments (dev → staging → prod).
+    purpose: "Makes the deployment risk explicit; forces staged-rollout thinking"

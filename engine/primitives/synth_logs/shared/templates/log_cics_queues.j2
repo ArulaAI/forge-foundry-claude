@@ -1,0 +1,82 @@
+{# M6 /mod-synth-logs Phase C — cics_queues renderer body (M6-TEMPLATE-3 / #471).
+
+   Renders the body of ``_render_cics_queues()``. CICS Temporary Storage
+   (TS) and Transient Data (TD) queue operations: READQ TS, WRITEQ TS,
+   READQ TD, WRITEQ TD (BankDemo reference ``synth-logs-generate.md``
+   §"LOG FILE 8").
+
+   Output line shape (per BankDemo, slightly compacted — the spec
+   leaves field order to the renderer as long as parseable):
+
+       <timestamp> QUEUE TYPE=<TS|TD> QUEUE=<name> OP=<READQ|WRITEQ> ITEM=<n> LENGTH=<n> RESP=<NORMAL|NOSPACE>
+
+   - ``timestamp``: ISO-8601 UTC, spaced linearly across the spec window.
+   - ``TYPE``: weighted choice — TS 70% (conversational transaction state),
+     TD 30% (logging / trigger-level dispatch).
+   - ``QUEUE``: per-line synthesised name. TS queues are derived from a
+     transaction ID drawn from ``entities_digest["transactions"]`` with
+     a 4-digit task suffix (``<txn><NNNN:04d>``, max 8 chars total — CICS
+     queue names are 8 chars max so we truncate the transaction id to
+     leave room for the suffix). TD queues are drawn from a closed pool
+     of well-known CICS TD queue names (``CSMT`` / ``CSML`` / ``CSSL`` /
+     ``CDBC``) — these are CICS-system constants, not synthesised from
+     entities (BankDemo §"LOG FILE 8" Day 2 / Day 3 content requirements
+     reference ``CSMT`` explicitly).
+   - ``OP``: weighted choice — READQ 55% / WRITEQ 45% (queues tend to
+     read-heavy in conversational pattern; almost balanced).
+   - ``ITEM``: ``rng.randint(1, 99)`` — TS queue item numbers cap small.
+   - ``LENGTH``: ``rng.randint(64, 32760)`` — CICS queue item length max.
+   - ``RESP``: 99% ``NORMAL``, 1% ``NOSPACE`` (the Day-3 cascading
+     incident signature per BankDemo content requirements).
+
+   Anti-hallucination: empty transactions list forces every line to
+   ``TYPE=TD`` (queue names then come from the constant pool, which is
+   intentionally NOT in EntitiesDigest because CICS TD queue names are
+   system fixtures, not application-discoverable entities). This keeps
+   the digest contract intact: the only fields drawn from
+   ``entities_digest`` are transaction IDs, and the system-constant pool
+   is documented in this template's docstring above.
+
+   Determinism: only ``rng`` drives every sampling and jitter call.
+#}
+from datetime import datetime, timedelta, timezone
+
+transactions = list(entities_digest.get("transactions", []))
+
+window_start = datetime.fromisoformat(spec["time_range_start"])
+window_end = datetime.fromisoformat(spec["time_range_end"])
+entries_count = int(spec["entries_count"])
+if entries_count <= 0:
+    return ""
+
+window_secs = max((window_end - window_start).total_seconds(), 1.0)
+step = window_secs / max(entries_count, 1)
+
+td_queues = ("CSMT", "CSML", "CSSL", "CDBC")
+if transactions:
+    type_pool = ("TS",) * 7 + ("TD",) * 3
+else:
+    type_pool = ("TD",)
+op_pool = ("READQ",) * 11 + ("WRITEQ",) * 9
+
+lines: list[str] = []
+for i in range(entries_count):
+    ts = window_start + timedelta(seconds=i * step)
+    queue_type = rng.choice(type_pool)
+    if queue_type == "TS":
+        txn = rng.choice(transactions)
+        # CICS queue names cap at 8 chars; reserve 4 for the task-id suffix.
+        prefix = txn[:4]
+        queue_name = f"{prefix}{rng.randint(0, 9999):04d}"
+    else:
+        queue_name = rng.choice(td_queues)
+    op = rng.choice(op_pool)
+    item = rng.randint(1, 99)
+    length = rng.randint(64, 32760)
+    resp = "NOSPACE" if rng.random() < 0.01 else "NORMAL"
+    lines.append(
+        f"{ts.replace(tzinfo=timezone.utc).isoformat()} "
+        f"QUEUE TYPE={queue_type} QUEUE={queue_name} OP={op} "
+        f"ITEM={item} LENGTH={length} RESP={resp}"
+    )
+return "\n".join(lines) + "\n"

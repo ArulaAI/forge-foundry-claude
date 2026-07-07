@@ -1,0 +1,64 @@
+# C6 /confidence-gate — Stage A report-type sniffer keys (#735).
+#
+# Twelve upstream primitive report types, each identified by the STRUCTURAL keys
+# of its top-level JSON object. A report matches a type when ALL `positive` keys
+# are present AND NONE of the `negative` keys are present. A report matching no
+# type (or more than one) is a malformed-report error. These keys are the
+# canonical contract shared with the deterministic `shared/report_dispatchers/`
+# sniffers — keep the two in lockstep.
+#
+# c10/c11 (AI-quality) are sniffed differently: a `findings` list whose items
+# carry a failure-mode `mode` in the listed set, OR a `report_type` / `primitive`
+# marker equal to the type name (see ai_quality below).
+
+c4_code_review:
+  positive: [code_path, issues, lenses]
+  negative: [contract_path, iac_path, layer_violations, matches, sources, threats, traces]
+
+c5_spec_validate:
+  positive: [code_path, spec_path, traces]
+  negative: []
+
+c8_architecture_review:
+  positive: [code_path, coupling, cycles, layer_violations]
+  negative: []
+
+s10_threat_model:
+  positive: [methodology, spec_title, threats]
+  negative: [contract_path, iac_path, issues, layer_violations, matches, sources, traces]
+
+s11_security_review:
+  positive: [code_path, findings, lenses, sensitive_areas]
+  negative: [components, endpoints, iac_path, issues, layer_violations, matches, sources, threats, traces]
+
+s20_cloud_arch_review:
+  # cloud_arch_render.py emits findings grouped by WAF pillar under
+  # `pillar_findings`, plus the `workload_context` block — both unique to S20
+  # (#953). It does NOT emit a top-level `findings`/`iac_path`/`pillars`.
+  positive: [pillar_findings, workload_context]
+  negative: [findings, code_path, contract_path]
+
+s30_frontend_design:
+  positive: [code_path, components, findings, lenses]
+  negative: [endpoints, iac_path, layer_violations, matches, sensitive_areas, sources]
+
+s40_api_contract_review:
+  positive: [contract_path, endpoints, findings, lenses]
+  negative: []
+
+s60_data_flow_map:
+  positive: [flows, retention, sinks, sources]
+  negative: []
+
+s70_compliance_map:
+  positive: [frameworks, gaps, matches, spec_title]
+  negative: []
+
+# AI-quality (rule-based) — sniffed by failure-mode, not key presence.
+c10_failure_mode_audit:
+  findings_modes: [fm1, fm2, fm3, fm4, fm5]
+  marker: c10_failure_mode_audit   # report_type or primitive == this also matches
+
+c11_production_failure_audit:
+  findings_modes: [fm6, fm7, fm8, fm9, fm10]
+  marker: c11_production_failure_audit

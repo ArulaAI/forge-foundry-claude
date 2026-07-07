@@ -1,0 +1,57 @@
+# R1 /rules-gen catalog — Microsoft SQL Server / T-SQL.
+#
+# Path-scoped to .sql files. Targets modern SQL Server (2022 / Azure
+# SQL / Managed Instance) T-SQL idioms: SET NOCOUNT ON, TRY...CATCH,
+# temporal tables, Always Encrypted, Query Store, MERGE caveats, JSON
+# support, columnstore, in-memory OLTP, and Resumable Index Operations.
+name: mssql
+description: "SQL Server / T-SQL: TRY...CATCH, temporal tables, Query Store, Always Encrypted"
+version: "1.0.0"
+paths:
+  - "**/*.sql"
+sections:
+  - heading: "T-SQL session settings and procedure shape"
+    rules:
+      - "Every stored procedure starts with `SET NOCOUNT ON;` — the rowcount messages on `INSERT/UPDATE/DELETE` confuse ORM drivers (the second result set looks like data) and saturate the wire on chatty procedures."
+      - "Set `SET XACT_ABORT ON;` at the top of any procedure that opens an explicit transaction; without it, a non-fatal error leaves an open transaction the client has to clean up."
+      - "Use `THROW` (SQL Server 2012+) instead of `RAISERROR` for re-raising errors — `THROW` preserves the original error number and severity, `RAISERROR` substitutes 50000."
+      - "Use `CREATE OR ALTER PROCEDURE` (SQL Server 2016+) for idempotent deployments instead of the `IF OBJECT_ID(...) IS NULL DROP` boilerplate."
+      - "Schema-qualify every object reference (`dbo.MyTable`, not bare `MyTable`); unqualified names resolve via the user's default schema and silently bind to the wrong object across users."
+      - "Avoid `sp_executesql @sql` with concatenated input — bind every parameter. Dynamic SQL that's truly necessary (e.g. parameterized table names) validates the identifier against `sys.objects` first."
+      - "Date / time columns use `datetime2(n)` (not legacy `datetime`) — `datetime` has 3.33 ms precision and a year-9999 ceiling; `datetime2` is the modern choice."
+
+  - heading: "TRY...CATCH and error handling"
+    rules:
+      - "Wrap every write transaction in `BEGIN TRY ... BEGIN TRAN ... COMMIT TRAN ... END TRY BEGIN CATCH ... IF @@TRANCOUNT > 0 ROLLBACK TRAN ... THROW; END CATCH`; the `THROW` re-raises with the original error context."
+      - "`@@TRANCOUNT > 0` check before ROLLBACK is required — the error may have already auto-rolled-back (`XACT_STATE() = -1`), in which case a ROLLBACK would error."
+      - "Use `XACT_STATE()` (returns -1 / 0 / 1) inside CATCH to decide whether to ROLLBACK or COMMIT; nested transactions and uncommittable transactions both produce surprises without this check."
+      - "Never `SET ANSI_WARNINGS OFF` — it suppresses overflow / divide-by-zero errors and produces silent data corruption (NULL instead of error)."
+      - "Functions defined with `WITH SCHEMABINDING` cannot be silently invalidated by an underlying schema change; mandatory for indexed views and required for any function used in a computed-column index."
+      - "Avoid `MERGE` in production code (KB 4117055 documents multiple correctness bugs); prefer explicit `INSERT WHERE NOT EXISTS` + `UPDATE WHERE EXISTS` (or `INSERT ... ON CONFLICT` if migrating to Azure SQL DB hyperscale with that feature flag)."
+
+  - heading: "Temporal tables and change tracking"
+    rules:
+      - "System-versioned temporal tables (`PERIOD FOR SYSTEM_TIME`, `WITH (SYSTEM_VERSIONING = ON)`) record full row history with no application code; auditors get point-in-time queries (`SELECT ... FOR SYSTEM_TIME AS OF '2025-01-01'`) for free."
+      - "Use `FOR SYSTEM_TIME BETWEEN ... AND ...` for change-over-time queries; the history table is automatically maintained and clustered-indexed."
+      - "Retention on the history table is configurable (`HISTORY_RETENTION_PERIOD = 7 YEARS`) — set the retention to match the SOX / PCI obligation for the data class."
+      - "Change Data Capture (CDC) is the right tool for downstream consumers (ETL, message bus) that need to react to changes; temporal tables are the right tool for query-time audit of past state."
+      - "Change Tracking (lighter than CDC) reports *which* rows changed but not the prior values — sufficient for incremental ETL where only the current state matters."
+      - "Always Encrypted (Always Encrypted with secure enclaves, SQL Server 2019+) encrypts columns client-side using a key the database server never sees; mandatory for PAN / SSN / credit-card columns under PCI DSS 4.0."
+
+  - heading: "Query Store, indexing, and performance"
+    rules:
+      - "Enable Query Store (`ALTER DATABASE ... SET QUERY_STORE = ON`) on every production database; it captures query plans + runtime statistics for plan regression analysis. Default in Azure SQL DB and SQL Server 2022."
+      - "Use Query Store's plan forcing (`sp_query_store_force_plan`) to pin a known-good plan when the optimizer regresses — preferable to hint-based plan freezing."
+      - "Columnstore indexes (`CREATE CLUSTERED COLUMNSTORE INDEX`) replace heap + non-clustered-index designs for analytical / DW workloads — 10-100x compression and vectorized scan."
+      - "Filtered indexes (`CREATE INDEX ... WHERE col IS NOT NULL`) narrow the index to the queried slice; sparse columns + filtered indexes save substantial disk and IO."
+      - "Resumable index operations (`WITH (ONLINE = ON, RESUMABLE = ON)`, SQL Server 2017+) survive across maintenance windows without restart; the rebuild can pause and resume across hours."
+      - "Avoid `WITH (NOLOCK)` and `READ UNCOMMITTED` as a default — they return uncommitted (and potentially never-committed) rows and silently produce wrong results. Use `SNAPSHOT` isolation if you need non-blocking reads."
+
+  - heading: "JSON, in-memory OLTP, and modern features"
+    rules:
+      - "Use the native `JSON` type (Azure SQL DB / SQL Server 2025) or `nvarchar(max)` + `ISJSON()` check constraint (SQL Server 2016+) for semi-structured columns; pair with computed-column indexes for query support."
+      - "`OPENJSON`, `JSON_VALUE`, `JSON_QUERY`, `JSON_MODIFY` cover the parse / project / merge surface; avoid round-tripping JSON through the application for indexable-key extraction."
+      - "Memory-Optimized Tables (`WITH (MEMORY_OPTIMIZED = ON)`, In-Memory OLTP) suit hot-key counters and session caches; the engine eliminates lock + latch entirely. Not a replacement for disk-based OLTP."
+      - "Natively-compiled stored procedures (`WITH NATIVE_COMPILATION, SCHEMABINDING`) operate on memory-optimized tables and produce C-compiled procedures with significantly lower CPU per call."
+      - "`STRING_AGG()` (SQL Server 2017+) replaces the legacy `FOR XML PATH` group-concat hack; readable and significantly faster."
+      - "Use the `IDENTITY` property only for monotonic surrogate keys; for distributed insert without server round-trip, generate UUIDv7 / NEWSEQUENTIALID() in the application — `NEWID()` gives terrible index locality."

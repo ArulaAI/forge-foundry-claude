@@ -1,0 +1,60 @@
+# R1 /rules-gen catalog — Python 3.12+ application and library code.
+#
+# Path-scoped: covers .py sources and pyproject.toml. Targets the
+# Python 3.12 feature set (PEP 695 generics, PEP 701 f-strings,
+# per-interpreter GIL groundwork), the modern build/dependency stack
+# (uv, hatch, PEP 621), and the canonical lint/format/typing toolchain
+# (Ruff, mypy / Pyright, pytest, Hypothesis).
+name: python
+description: "Python 3.12+ conventions, typing, packaging, lint, format, and testing"
+version: "1.0.0"
+paths:
+  - "**/*.py"
+  - "**/pyproject.toml"
+sections:
+  - heading: "Python 3.12+ language and typing"
+    rules:
+      - "Use Python 3.12 minimum (3.11 is acceptable for libraries with broad-version support); pin `requires-python = \">=3.12\"` in `pyproject.toml` for new applications."
+      - "PEP 695 generic syntax (`def f[T](x: T) -> T:` and `type Alias = X | Y`) replaces the legacy `TypeVar` / `TypeAlias` boilerplate in Python 3.12+; libraries supporting 3.11 stay on the old syntax via `typing_extensions`."
+      - "Use the modern union syntax (`X | Y` instead of `Union[X, Y]`) and `list[int]` / `dict[str, int]` instead of `List` / `Dict` from `typing` (PEP 585, PEP 604) — supported since 3.10."
+      - "`from __future__ import annotations` is recommended at the top of every module — defers annotation evaluation, avoids forward-reference quotes, and is forward-compatible with PEP 649."
+      - "Use `match` / `case` (PEP 634) for tagged-union dispatch (e.g. discriminating on a `kind` field, walking an AST); avoid match for trivial `if`/`elif` chains where it adds no clarity."
+      - "Type every public function signature; private helpers may go untyped if covered by a typed caller, but library modules type 100% of the public surface."
+      - "Pydantic v2 (or `dataclasses` + manual validation) for runtime-validated DTOs; `attrs` for performance-critical data classes; never raw `dict[str, Any]` across module boundaries."
+
+  - heading: "Project layout, packaging, and dependencies"
+    rules:
+      - "`pyproject.toml` is the single source of truth (PEP 621); `setup.py`, `setup.cfg`, and `requirements.txt` are grandfathered only — new projects use `pyproject.toml`."
+      - "Use `uv` (10-100x faster than pip + Poetry combined) or Hatch for dependency management and virtualenvs; pip-tools is grandfathered."
+      - "Layout: src-layout (`src/<package>/`) for libraries to prevent accidentally importing from the working directory; flat layout is acceptable for applications."
+      - "Lockfile (`uv.lock`, `poetry.lock`, `requirements.lock`) is committed; CI installs with `--frozen` / `--locked` to catch lockfile drift."
+      - "Build backend: `hatchling` (PEP 517) for libraries; `setuptools` is the conservative default; avoid `flit` for new projects (less actively maintained than alternatives)."
+      - "Dependency-vulnerability scanning runs every build (`pip-audit`, Snyk, GitHub Dependabot); CVSS ≥ 7 findings block release."
+      - "Pin direct dependencies with lower bounds and upper bounds for libraries (`pydantic >=2.0, <3.0`); applications may pin to exact versions if reproducibility outweighs flexibility."
+
+  - heading: "Lint, format, and static analysis"
+    rules:
+      - "Ruff is the canonical lint + format tool (replaces flake8 + isort + black + pyupgrade + bandit-lite + pylint subset); configure via `[tool.ruff]` in `pyproject.toml`."
+      - "Enable the `E`, `F`, `W`, `I`, `B`, `UP`, `S`, `SIM`, `RUF` rule sets minimum; the `S` (bandit) set catches `assert` in production code, hardcoded passwords, weak crypto."
+      - "Run `ruff format --check` in CI (Black-compatible) and `ruff format` locally; Black is grandfathered — Ruff format is the same output 10x faster."
+      - "Use `mypy --strict` or Pyright (`pyrightconfig.json` with `strict: true`) for type checking; CI fails on new mypy errors. Existing untyped modules use `# type: ignore[<error-code>]` with the narrowest possible code, never blanket `# type: ignore`."
+      - "Pre-commit hooks (pre-commit framework, lefthook) run Ruff + mypy + test-on-staged-files on every commit; never bypass with `--no-verify`."
+
+  - heading: "Testing with pytest and Hypothesis"
+    rules:
+      - "pytest is the test runner; unittest is grandfathered. Use plain `assert` (pytest rewrites assertions for readable failures); `self.assertEqual` style is unittest-only."
+      - "Fixtures over xUnit setup/teardown: `@pytest.fixture` composes cleanly, supports scopes (`function`, `module`, `session`), and avoids the inheritance trap of `setUp` chains."
+      - "Parametrize tests with `@pytest.mark.parametrize`; one parametrized test beats ten copy-paste tests because the failure message points at the offending parameter id."
+      - "Use Hypothesis (property-based testing) for parsers, encoders, serialization round-trips, and any function with non-obvious edge cases; one Hypothesis strategy replaces dozens of example tests."
+      - "Mock the *minimum* surface: `unittest.mock.patch` on the import location, not the definition location; `pytest-mock` (`mocker` fixture) provides better failure messages."
+      - "Coverage measured with `coverage` + `pytest-cov`; gate at `--cov-fail-under=85` (or higher) in CI. Branch coverage (`--cov-branch`) catches missed `else` clauses that line coverage misses."
+      - "Type tests too: `mypy.testing` or `pytest-mypy-plugins` ensure the public API surfaces the types you intend; type regressions ship as silent bugs otherwise."
+
+  - heading: "Async, concurrency, and performance"
+    rules:
+      - "Use `asyncio` for I/O-bound concurrency; threads for CPU-bound + blocking-IO interop; multiprocessing only when you need real parallelism and the per-process overhead is amortized."
+      - "Prefer `asyncio.TaskGroup` (Python 3.11+) over manual `asyncio.gather` + cancellation handling — TaskGroup propagates exceptions correctly and avoids the silent-task-leak class of bug."
+      - "`asyncio.timeout()` is the modern cancellation API (3.11+); `asyncio.wait_for` is grandfathered."
+      - "Profile before optimizing: `cProfile` + `snakeviz` or `py-spy` for sampling. Premature `lru_cache` decorators hurt readability and rarely move the needle."
+      - "Use `concurrent.futures.ProcessPoolExecutor` or `multiprocessing` with `if __name__ == '__main__':` guard; on Python 3.14+ the per-interpreter GIL groundwork (PEP 684) will offer a third option."
+      - "Avoid global mutable state — it breaks under threads, async, and multiple-import scenarios. Inject dependencies via constructor / function parameter or use `contextvars` for true context-local state."

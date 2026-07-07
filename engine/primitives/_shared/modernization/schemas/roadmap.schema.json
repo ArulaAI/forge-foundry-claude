@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "RoadmapItem": {
+      "additionalProperties": false,
+      "description": "One work item: a unit placed in a wave, deferred, or never-extract.\n\n``rationale`` explains a ``deferred`` / ``never_extract`` placement (e.g.\n\"in dependency cycle [a, b]\", \"external/unknown dependency\"); it is empty for\nitems that sit cleanly in an ``extract_order`` wave.",
+      "properties": {
+        "depends_on": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "risk": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Risk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "RoadmapItem",
+      "type": "object"
+    },
+    "RoadmapWave": {
+      "additionalProperties": false,
+      "description": "A topologically-ordered batch of items that can proceed together.",
+      "properties": {
+        "items": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/RoadmapItem"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "wave": {
+          "title": "Wave",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "wave"
+      ],
+      "title": "RoadmapWave",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The wave-sequenced modernization plan (``sequencer.py`` output).\n\nUnlike its three sibling artifacts this shape stays within the Gemini schema\nsubset today, so it needs no ``@accepts_extended_schema`` exemption; add one\nonly if a future field introduces ``$ref``/``anyOf`` nesting that trips the\ngate (``tests/test_modernization_engine.py`` would catch it).",
+  "properties": {
+    "cycles": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Cycles",
+      "type": "array"
+    },
+    "deferred": {
+      "items": {
+        "$ref": "#/$defs/RoadmapItem"
+      },
+      "title": "Deferred",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "never_extract": {
+      "items": {
+        "$ref": "#/$defs/RoadmapItem"
+      },
+      "title": "Never Extract",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "waves": {
+      "items": {
+        "$ref": "#/$defs/RoadmapWave"
+      },
+      "title": "Waves",
+      "type": "array"
+    }
+  },
+  "title": "Roadmap",
+  "type": "object"
+}

@@ -1,0 +1,57 @@
+# R1 /rules-gen catalog — Node.js 22+ server / tooling code.
+#
+# Path-scoped: covers .ts / .js files and package.json. Targets the
+# Node.js 22 LTS feature set (built-in test runner, native `fetch`,
+# `--watch`, permission model), the ESM-first ecosystem, the canonical
+# npm/pnpm/yarn workflow, and the modern observability + security stack.
+name: nodejs
+description: "Node.js 22+ runtime, ESM, package management, testing, and security"
+version: "1.0.0"
+paths:
+  - "**/*.ts"
+  - "**/*.js"
+  - "**/package.json"
+sections:
+  - heading: "Node.js 22+ runtime features"
+    rules:
+      - "Use Node.js 22 LTS minimum (active LTS through 2027); pin via `engines` in `package.json` AND `.nvmrc` / `volta` so CI and dev environments agree."
+      - "Built-in `fetch` (stable since Node 21) replaces `node-fetch`; for streaming bodies and AbortSignal it's a strict superset."
+      - "The Node test runner (`node --test`) and assertion module (`node:test`, `node:assert/strict`) replace Mocha/Jest for new tools and small projects; Jest / Vitest remain appropriate for large app suites with extensive mocking."
+      - "Use `node --watch` and `node --watch-path` for hot reload in dev — nodemon is grandfathered."
+      - "Native `--env-file=.env` (Node 20.6+) reads dotenv files at boot; `dotenv` package is grandfathered for advanced use cases (interpolation, type coercion)."
+      - "Worker threads (`node:worker_threads`) for CPU-bound parallelism; `child_process` only when you need a separate process (different runtime, sandbox, OS fork)."
+      - "The Node 22 permission model (`--permission --allow-fs-read=...`) provides defense-in-depth against supply-chain compromise; opt in for security-sensitive workloads (CI runners, untrusted plugin code)."
+
+  - heading: "ESM and module conventions"
+    rules:
+      - "New packages are ESM-first (`\"type\": \"module\"` in `package.json`); CommonJS is grandfathered and `require()` interop quirks (default-export vs named) burn engineers regularly."
+      - "Use `node:` prefix imports (`import fs from 'node:fs/promises'`) — they're unambiguous, future-proof, and protect against npm-package-shadows-builtin attacks."
+      - "Prefer `import` over `require`; if you must dynamic-import in CommonJS, use `await import()` rather than `require()` so the same code works in ESM."
+      - "`package.json` `exports` field (subpath exports + conditional exports) replaces the legacy `main` + `types` fields; tooling that respects `exports` enforces the package's intended public surface."
+      - "Top-level await is supported in ESM modules — use it for module initialization (DB connection, secret-fetch) instead of an exported `init()` function callers might forget to invoke."
+
+  - heading: "Package management, lockfile, and supply chain"
+    rules:
+      - "Choose ONE package manager per repo (npm, pnpm, or yarn) and enforce via `packageManager` in `package.json` plus Corepack; mixed lockfiles produce non-deterministic installs."
+      - "Lockfile (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock`) is committed and CI uses the `--frozen-lockfile` / `--immutable` flag to fail on lockfile drift."
+      - "Use `npm audit` / `pnpm audit` in CI; HIGH and CRITICAL findings block release. Pair with Snyk or GitHub Dependabot for richer triage."
+      - "Pin direct dependencies to caret ranges (`^1.2.3`) for libraries you trust to follow semver, exact pins (`1.2.3`) for security-critical or unstable dependencies — exact pins everywhere defeats security patches."
+      - "Pre-commit hooks (gitleaks, trufflehog) scan for accidentally committed secrets; `npm pack --dry-run` previews the publish payload (catches files that should be in `.npmignore` / `files`)."
+      - "Disable `postinstall` and `preinstall` scripts in untrusted dependencies via npm 9+ `--ignore-scripts` in CI; supply-chain attacks routinely exploit install hooks."
+
+  - heading: "Async patterns and error handling"
+    rules:
+      - "Use `async`/`await` end-to-end; mixing callbacks and promises in the same function path defeats stack-trace propagation and leaks `unhandledRejection`."
+      - "Always handle promise rejection — set a `process.on('unhandledRejection', ...)` handler at boot AND `await` every promise. An unawaited promise that rejects in Node 15+ kills the process by default."
+      - "Use `Promise.allSettled` (not `Promise.all`) when one rejection should NOT cancel the others (e.g. fan-out for analytics events); use `Promise.all` when failure of any branch invalidates the whole operation."
+      - "AbortController is the cancellation primitive for `fetch`, timers (`setTimeout(..., { signal })`), and most async APIs — pass `AbortSignal.timeout(ms)` instead of manual race-with-timeout."
+      - "Avoid `new Promise((resolve, reject) => ...)` — wrap callbacks via `util.promisify` instead. Hand-rolled promise wrappers commonly forget to call `reject` on error paths."
+
+  - heading: "Logging, observability, and security"
+    rules:
+      - "Use Pino (JSON-structured, fast) or Winston (legacy, configurable) for logging; never `console.log` in production code — `console.log` is synchronous and blocks the event loop on slow stdout."
+      - "Set log levels via env var (`LOG_LEVEL=info`); never hardcode the level — production debug-level logs leak secrets and saturate ingestion budgets."
+      - "OpenTelemetry SDK (`@opentelemetry/sdk-node`) is the observability standard; instrument with auto-instrumentations for HTTP, DB, and queue clients before adding manual spans."
+      - "HTTP servers use Helmet (or framework equivalent) for security headers (CSP, HSTS, X-Content-Type-Options); CORS configuration is allowlist-only — never `Access-Control-Allow-Origin: *` for credentialed endpoints."
+      - "Input validation at the request boundary uses Zod, Valibot, or TypeBox — runtime validation catches what TypeScript cannot (network payloads are `unknown` until validated)."
+      - "Use Express 5 (released 2024) or Fastify for new HTTP services; Express 4 is grandfathered. Fastify wins on raw throughput and ships JSON schema validation natively."

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "S2 test-maintainer e2e map",
+  "description": "Declares which e2e specs exercise which source surfaces, so a route/handler change flags the impacted e2e tests (#1029).",
+  "type": "object",
+  "required": ["version", "rules"],
+  "properties": {
+    "version": { "const": 1 },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["specs"],
+        "properties": {
+          "specs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "e2e spec globs (repo-relative, POSIX) impacted by the surface/route."
+          },
+          "surface": {
+            "type": "string",
+            "description": "Changed-path glob (repo-relative, POSIX)."
+          },
+          "route": {
+            "type": "string",
+            "description": "Route literal matched against routes parsed from the changed files."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

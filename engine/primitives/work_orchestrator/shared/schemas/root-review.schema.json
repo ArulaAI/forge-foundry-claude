@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-orchestrator-root-review",
+  "title": "C7 root-level system-review verdict",
+  "description": "Outcome of one opt-in root-level system review (S70 compliance-map / S60 data-flow-map / S10 threat-model / C8 architecture-review), run once at the root against the assembled tree (spec §3.2). Off by default; enabled via --with-*. The verdict folds into the final tree-gate.",
+  "type": "object",
+  "required": ["verdict"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["clean", "dirty"],
+      "description": "clean = the system review found nothing gate-blocking. dirty = it found a blocking concern (the tree cannot be fully clean)."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Optional one-line summary of the review's finding, surfaced in the WorkflowReport's root-review table."
+    }
+  }
+}

@@ -1,0 +1,59 @@
+# R1 /rules-gen catalog — PostgreSQL 16+.
+#
+# Path-scoped to .sql files. Targets modern Postgres (16 / 17) features:
+# JSONB indexing, Row-Level Security, declarative partitioning, parallel
+# query, pg_stat_statements, logical replication, generated columns,
+# materialized views, pgvector for embeddings, and the canonical
+# extension stack (pg_partman, pgaudit, pg_repack).
+name: postgres
+description: "PostgreSQL 16+: JSONB, RLS, partitioning, pg_stat_statements, pgvector"
+version: "1.0.0"
+paths:
+  - "**/*.sql"
+sections:
+  - heading: "JSONB, indexing, and semi-structured data"
+    rules:
+      - "Use `JSONB` (binary, indexable, queryable) — never `JSON` (text) — for semi-structured columns; the storage cost is similar but JSONB supports GIN / expression indexes and the `@>`, `?`, `#>` operators."
+      - "Index JSONB columns with GIN on the whole column (`USING GIN (col)`) for containment queries, OR with B-tree expression indexes (`USING BTREE ((col->>'kind'))`) on specific keys — choose by query pattern."
+      - "Use the `jsonb_path_ops` GIN opclass when only `@>` containment is needed; it produces a smaller, faster index than the default `jsonb_ops`."
+      - "Avoid round-tripping JSONB through the application for filtering — use `col @> '{\"key\": \"value\"}'::jsonb` predicates directly, which the planner can satisfy from a GIN index."
+      - "Use `jsonb_build_object`, `jsonb_set`, and `jsonb_strip_nulls` for server-side JSON construction; string-concatenated JSON literals fail review (escaping bugs, injection risk)."
+      - "Generated columns (`GENERATED ALWAYS AS (col->>'kind') STORED`) materialize a JSONB key as a regular column with regular index support — useful when one key dominates query patterns."
+
+  - heading: "Row-Level Security and policies"
+    rules:
+      - "Enable Row-Level Security (`ALTER TABLE x ENABLE ROW LEVEL SECURITY`) on every multi-tenant table; pair with `FORCE ROW LEVEL SECURITY` so even the table owner respects the policies during admin scripts."
+      - "Policies (`CREATE POLICY name ON table USING (predicate)`) define visibility (`USING`) and writeability (`WITH CHECK`) separately; for tenant isolation, both are typically `tenant_id = current_setting('app.tenant_id')::int`."
+      - "Set the application's tenant context via `SET LOCAL app.tenant_id = ...` at the start of every transaction; `current_setting('app.tenant_id', true)` returns NULL if unset — defense-in-depth against forgotten settings."
+      - "Service roles (`pg_read_all_data`, `pg_write_all_data`) bypass RLS — restrict their grant scope; superusers always bypass RLS, which is why migration jobs must NOT run as superuser against production."
+      - "Audit policy changes via pgaudit (`pgaudit.log = 'role, ddl'`) — silent policy edits are an obvious attack vector that the default `pg_audit_log` cannot recover."
+      - "Test RLS by switching role within a session (`SET ROLE tenant_user`) and re-running queries; CI integration tests assert the boundary holds — RLS misses are silent until exploited."
+
+  - heading: "Declarative partitioning and large tables"
+    rules:
+      - "Use declarative partitioning (`PARTITION BY RANGE / LIST / HASH`) for tables that grow beyond ~50M rows or where range-pruning is a natural query pattern (event logs, time-series, monthly snapshots)."
+      - "Partition pruning works only when the partition key appears as a literal or a stable parameter in `WHERE` — confirm via `EXPLAIN` that the planner is dropping partitions before assuming the design works at scale."
+      - "Use `pg_partman` for automated partition creation and retention (drop partitions older than N days, create future partitions on a cron); rolling your own partition-management is a source of midnight pages."
+      - "Indexes on partitioned tables are partitioned indexes (Postgres 11+) — each partition gets its own physical index, queries combine plans across them. `CREATE INDEX ... ON parent ...` propagates to all current and future partitions."
+      - "`ATTACH PARTITION ... CONCURRENTLY` (Postgres 12+) avoids exclusive locks during bulk-load workflows; `DETACH PARTITION CONCURRENTLY` (Postgres 14+) is the symmetric tool for retention."
+      - "For very large tables (> 1B rows) declarative partitioning beats sharding for most workloads; `citus` or logical sharding is the next step when a single instance no longer fits."
+
+  - heading: "Performance, EXPLAIN ANALYZE, and pg_stat_statements"
+    rules:
+      - "Use `EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON)` for query tuning — `BUFFERS` exposes I/O, `VERBOSE` shows column references, JSON format integrates with tools like `pg_explain_viewer`."
+      - "Enable `pg_stat_statements` on every production database — it summarizes query latency / call count / I/O per normalized query and is the canonical surface for finding slow queries."
+      - "Set `log_min_duration_statement = 1000` (or lower) to capture slow queries in the server log; pair with `auto_explain` for plans of slow statements."
+      - "Run `ANALYZE` after bulk loads — the planner uses table statistics, and stale statistics produce dramatic plan regressions on dynamic workloads."
+      - "Use `VACUUM (FREEZE, ANALYZE)` on append-mostly tables before they cross the `autovacuum_freeze_max_age` threshold — freezing in maintenance windows beats freezing during peak load."
+      - "Track bloat via `pg_stat_user_tables.n_dead_tup` and `pg_stat_user_indexes`; `pg_repack` rewrites tables and indexes online without long-locking VACUUM FULL."
+      - "Parallel query (`max_parallel_workers_per_gather`, `min_parallel_table_scan_size`) is enabled by default; large analytical queries benefit, but small OLTP queries do not — keep parallel-leader settings conservative."
+
+  - heading: "Modern features, replication, and extensions"
+    rules:
+      - "Use generated columns (`GENERATED ALWAYS AS (expr) STORED`) for derived values that need indexing; the database keeps them in sync with no trigger."
+      - "Materialized views (`CREATE MATERIALIZED VIEW`) snapshot expensive aggregations; refresh with `REFRESH MATERIALIZED VIEW CONCURRENTLY view_name` (requires a unique index) to avoid lock-out during the refresh."
+      - "Logical replication (`CREATE PUBLICATION`, `CREATE SUBSCRIPTION`) enables zero-downtime major-version upgrades (publish from N, subscribe from N+1, cut over) — physical replication can only cross major versions in one direction at a time."
+      - "Use `pgvector` for vector similarity (embeddings) workloads; index with HNSW (`USING hnsw (vec vector_l2_ops)`) for high recall, IVFFlat for lower memory footprint."
+      - "`pgaudit` extension provides session and object-level audit logging required for SOX / PCI scope; configure `pgaudit.log = 'read, write, ddl'` for a typical regulated workload."
+      - "Connection pooling via `pgbouncer` or `pgcat` is mandatory for high-concurrency applications — Postgres connections are processes, and unbounded connection growth saturates the server. `transaction` pooling mode is the default; `session` mode is required if your code uses prepared statements or `SET LOCAL` outside transactions."
+      - "Always specify `WITH (FILLFACTOR = ...)` for hot-update tables (e.g. 80-90); the default 100 forces HOT-update degradation under heavy update load."
