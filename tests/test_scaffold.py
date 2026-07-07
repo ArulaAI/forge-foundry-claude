@@ -1,4 +1,3 @@
-from pathlib import Path
 
 
 def test_repo_root_has_scripts(repo_root):

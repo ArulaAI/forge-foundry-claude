@@ -1,9 +1,8 @@
 # tests/test_lock.py
-import json
 import subprocess
 from pathlib import Path
 import pytest
-from scripts._vendor.lock import resolve_source, write_lock, read_lock, SourceInfo
+from scripts._vendor.lock import resolve_source, write_lock, read_lock
 
 
 def _git(*args, cwd):
@@ -12,7 +11,8 @@ def _git(*args, cwd):
 
 
 def _make_repo(tmp_path) -> Path:
-    r = tmp_path / "src"; r.mkdir()
+    r = tmp_path / "src"
+    r.mkdir()
     _git("init", "-q", cwd=r)
     _git("config", "user.email", "t@t", cwd=r)
     _git("config", "user.name", "t", cwd=r)
@@ -39,7 +39,8 @@ def test_resolve_source_rejects_dirty(tmp_path):
 def test_write_and_read_lock(tmp_path):
     r = _make_repo(tmp_path)
     info = resolve_source(r, "v1.0.0")
-    eng = tmp_path / "engine"; eng.mkdir()
+    eng = tmp_path / "engine"
+    eng.mkdir()
     d = write_lock(eng, info, primitive_count=31, version="0.1.0")
     assert d["primitive_count"] == 31 and d["version"] == "0.1.0"
     assert read_lock(eng)["sha"] == info.sha

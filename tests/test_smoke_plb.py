@@ -1,8 +1,6 @@
 # tests/test_smoke_plb.py
 import os
 import subprocess
-import sys
-from pathlib import Path
 import pytest
 
 

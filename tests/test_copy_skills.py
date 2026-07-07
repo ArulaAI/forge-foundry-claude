@@ -1,10 +1,11 @@
 from pathlib import Path
-from scripts._vendor.copy_skills import discover_primitives, copy_skills, PrimitiveSrc
+from scripts._vendor.copy_skills import discover_primitives, copy_skills
 
 
 def _fake_primitive(root: Path, name: str, slug: str, *, shared=False,
                     delegates=False, ref="hello.md"):
-    p = root / name / "skill"; p.mkdir(parents=True)
+    p = root / name / "skill"
+    p.mkdir(parents=True)
     fm = f"---\nname: {slug}\n"
     if delegates:
         fm += "delegates-to-cli: true\n"
@@ -13,13 +14,15 @@ def _fake_primitive(root: Path, name: str, slug: str, *, shared=False,
     (p / "references").mkdir()
     (p / "references" / ref).write_text("ref content")
     if shared:
-        s = root / name / "shared"; s.mkdir()
+        s = root / name / "shared"
+        s.mkdir()
         (s / "__init__.py").write_text("")
     return p
 
 
 def test_discover_reads_slug_and_flags(tmp_path):
-    prims_root = tmp_path / "primitives"; prims_root.mkdir()
+    prims_root = tmp_path / "primitives"
+    prims_root.mkdir()
     _fake_primitive(prims_root, "data_flow_map", "data-flow-map",
                     shared=True, delegates=True)
     found = discover_primitives(prims_root)
@@ -29,7 +32,8 @@ def test_discover_reads_slug_and_flags(tmp_path):
 
 
 def test_copy_skills_copies_references(tmp_path):
-    prims_root = tmp_path / "primitives"; prims_root.mkdir()
+    prims_root = tmp_path / "primitives"
+    prims_root.mkdir()
     _fake_primitive(prims_root, "code_review", "code-review")
     out = tmp_path / "skills"
     n = copy_skills(discover_primitives(prims_root), out)

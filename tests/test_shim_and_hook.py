@@ -1,7 +1,5 @@
 import os
-import stat
 import subprocess
-from pathlib import Path
 
 
 def test_shim_exists_and_executable(repo_root):

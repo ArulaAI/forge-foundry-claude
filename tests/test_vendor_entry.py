@@ -1,7 +1,6 @@
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 
 def test_plugin_manifest_valid(repo_root):

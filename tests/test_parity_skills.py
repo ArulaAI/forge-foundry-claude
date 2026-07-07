@@ -1,6 +1,4 @@
 import re
-from pathlib import Path
-import pytest
 
 EXPECTED_PLB = {
     "code-gen", "data-flow-map", "mod-db-schema-analyze", "mod-modernization-strategist",

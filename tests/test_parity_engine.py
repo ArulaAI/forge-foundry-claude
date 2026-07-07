@@ -1,6 +1,5 @@
 import subprocess
 import sys
-from pathlib import Path
 
 
 def test_engine_imports(repo_root):
