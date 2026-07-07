@@ -1,0 +1,13 @@
+{
+  "name": "forge-foundry-claude",
+  "description": "Forge Foundry engineering workbench — 31 primitives (spec, review, security, modernization, SDET) as Claude Code skills with a bundled deterministic Python engine.",
+  "version": "0.1.0",
+  "author": { "name": "Arula", "email": "rbuchanan@inrhythm.com" },
+  "license": "UNLICENSED",
+  "keywords": ["code-review", "security", "spec", "modernization", "sdet", "workbench"],
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bootstrap.sh" } ] }
+    ]
+  }
+}

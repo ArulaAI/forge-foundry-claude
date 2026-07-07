@@ -1,0 +1,8 @@
+{
+  "name": "forge-foundry",
+  "description": "Arula Forge Foundry — private Claude Code plugin marketplace.",
+  "owner": { "name": "Arula", "email": "rbuchanan@inrhythm.com" },
+  "plugins": [
+    { "name": "forge-foundry-claude", "source": "./", "version": "0.1.0" }
+  ]
+}
