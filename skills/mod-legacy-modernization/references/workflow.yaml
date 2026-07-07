@@ -17,7 +17,7 @@ name: legacy-modernization
 
 stages:
   - name: schema
-    command: forge-validate mod-db-schema-analyze
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-db-schema-analyze
     args:
       ddl_path: '$ddl_path'
       dialect: '$dialect'
@@ -25,7 +25,7 @@ stages:
       context_dir: '$context_dir'
     skip_when: false
   - name: stored-procs
-    command: forge-validate mod-stored-proc-analyze
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-stored-proc-analyze
     args:
       ddl_path: '$ddl_path'
       dialect: '$dialect'
@@ -33,7 +33,7 @@ stages:
       context_dir: '$context_dir'
     skip_when: '$skip_stored_procs'
   - name: strategy
-    command: forge-validate mod-modernization-strategist
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-strategist
     args:
       context_dir: '$context_dir'
       target_paradigm: '$target_paradigm'
@@ -41,7 +41,7 @@ stages:
       backend: '$backend'
     skip_when: '$skip_strategy'
   - name: conversions
-    command: forge-validate mod-sp-converter
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sp-converter
     parallel: true
     foreach: '$top_n_sps_by_risk'
     args:
@@ -51,9 +51,9 @@ stages:
       backend: '$backend'
     skip_when: '$skip_conversions'
   - name: rollup
-    command: python -m primitives.legacy_modernization.shared.report_aggregator
+    command: "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.legacy_modernization.shared.report_aggregator
     args:
       context_dir: '$context_dir'
-      output: '.foundry/context/db/modernization-report.md'
+      output: '.forge-foundry/context/db/modernization-report.md'
       backend: '$backend'
     skip_when: false

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts._vendor.copy_engine import copy_engine
 from scripts._vendor.copy_skills import copy_agents, copy_skills, discover_primitives
 from scripts._vendor.lock import resolve_source, write_lock
-from scripts._vendor.rewrite import rewrite_skills_tree
+from scripts._vendor.rewrite import rewrite_reference_files, rewrite_skills_tree
 
 
 def _patch_version(repo: Path, version: str) -> None:
@@ -42,12 +42,18 @@ def main(argv: list[str] | None = None) -> int:
     n_agents = copy_agents(prims, repo / "agents", args.source)
     copy_engine(args.source, prims, repo / "engine", version=args.version)
     counts = rewrite_skills_tree(repo / "skills")
+    ref_counts = rewrite_reference_files(repo / "skills")
 
     write_lock(repo / "engine", info, primitive_count=n_skills, version=args.version)
     _patch_version(repo, args.version)
 
     rewritten = sum(counts.values())
-    print(f"vendored {n_skills} skills, {n_agents} agents; {rewritten} PLB invocations rewritten")
+    ref_rewritten = sum(ref_counts.values())
+    print(
+        f"vendored {n_skills} skills, {n_agents} agents; "
+        f"{rewritten} PLB invocations rewritten in SKILL.md, "
+        f"{ref_rewritten} in reference files"
+    )
     print(f"source {info.ref}@{info.sha[:12]}")
     return 0
 

@@ -19,11 +19,41 @@ _UV_PREFIX = re.compile(
 _SHIM = '"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate"'
 _STATE_DIR = re.compile(r"\.foundry/context")
 
+# Match a `python -m primitives.<...>` invocation (e.g. the M0 workflow.yaml
+# `command: python -m primitives.legacy_modernization.shared.report_aggregator`),
+# rewriting the interpreter to the bundled engine venv python. Anchored on the
+# `primitives.` module prefix so generic prose like `python -m pytest` is left
+# untouched. Idempotent: the `(?<!/bin/)` guard skips an already-rewritten line.
+_ENGINE_PY = '"${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python"'
+_PYTHON_M = re.compile(
+    r'(?<!")'  # not already the quoted shim path
+    r"\bpython"
+    r"(?=\s+-m\s+primitives\.)"  # lookahead: `-m primitives.<...>` follows
+)
+
 
 def rewrite_skill_body(text: str) -> tuple[str, int]:
     new, n = _UV_PREFIX.subn(_SHIM, text)
+    new, np = _PYTHON_M.subn(_ENGINE_PY, new)
     new = _STATE_DIR.sub(".forge-foundry/context", new)
-    return new, n
+    return new, n + np
+
+
+_REFERENCE_SUFFIXES = (".yaml", ".yml", ".md")
+
+
+def rewrite_reference_files(skills_dir: Path) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    root = Path(skills_dir)
+    for ref in sorted(root.glob("*/references/**/*")):
+        if not ref.is_file() or ref.suffix.lower() not in _REFERENCE_SUFFIXES:
+            continue
+        text = ref.read_text()
+        new, n = rewrite_skill_body(text)
+        if new != text:
+            ref.write_text(new)
+        counts[str(ref.relative_to(root))] = n
+    return counts
 
 
 def rewrite_skills_tree(skills_dir: Path) -> dict[str, int]:

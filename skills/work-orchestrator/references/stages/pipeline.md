@@ -2,7 +2,7 @@
 
 The authoritative description of C7's **recursive, accuracy-driven, Python-load-bearing**
 workflow. C7 is **not** a fixed linear stage list any more: a run is a **tree of nodes** that the
-control plane (`forge-validate work-orchestrator`, in `primitives/work_orchestrator/shared/`)
+control plane (`"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" work-orchestrator`, in `primitives/work_orchestrator/shared/`)
 walks deterministically, emitting one structured prompt per round. The SKILL body drives only the
 outer extract→judge→continue loop. See the design spec
 [`docs/superpowers/specs/2026-06-24-work-orchestrator-recursive-redesign.md`](../../../../../docs/superpowers/specs/2026-06-24-work-orchestrator-recursive-redesign.md).
@@ -104,7 +104,7 @@ opt-outs in the consumer's `.foundry/failure-modes.yaml` are honored by the revi
 
 ```mermaid
 sequenceDiagram
-    participant CLI as forge-validate work-orchestrator
+    participant CLI as "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" work-orchestrator
     participant H as harness (SKILL.md body)
     CLI->>CLI: walk tree → next frontier node + stage
     CLI->>H: round-N-prompts.json (one structured prompt) + exit 7

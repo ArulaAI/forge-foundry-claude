@@ -32,3 +32,30 @@ def test_leaves_prose_untouched():
     body = "This skill delegates to forge-validate under the hood.\n"
     out, n = rewrite_skill_body(body)
     assert out == body and n == 0
+
+
+def test_rewrites_bare_forge_validate_command_value():
+    body = "command: forge-validate mod-db-schema-analyze\n"
+    out, n = rewrite_skill_body(body)
+    assert n == 1
+    assert 'command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-db-schema-analyze' in out
+    once, n2 = rewrite_skill_body(out)
+    assert once == out and n2 == 0
+
+
+def test_rewrites_python_m_primitives():
+    body = "command: python -m primitives.legacy_modernization.shared.report_aggregator\n"
+    out, n = rewrite_skill_body(body)
+    assert n == 1
+    assert (
+        'command: "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" '
+        "-m primitives.legacy_modernization.shared.report_aggregator" in out
+    )
+    once, n2 = rewrite_skill_body(out)
+    assert once == out and n2 == 0
+
+
+def test_leaves_python_m_pytest_untouched():
+    body = "Run `python -m pytest tests/ -q` to check.\n"
+    out, n = rewrite_skill_body(body)
+    assert out == body and n == 0
