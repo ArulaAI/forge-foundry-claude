@@ -79,7 +79,7 @@ the `spec` stage. On a run that has already **settled**, that means it re-runs t
 stage honoring the current flags, so to (re)open, force, or push the PR on a finished run, re-invoke
 **without** `--continue` (optionally with `--force-pr` / `--push`); do NOT feed a judgment to a
 settled tree via `--continue` (#1194). Note: `work-orchestrator` does **not** auto-consume M-tier
-`.forge-foundry/context/db/` artifacts — reference M-tier findings in the issue body instead (#1194 3c). The canonical
+`.foundry/context/db/` artifacts — reference M-tier findings in the issue body instead (#1194 3c). The canonical
 per-node lifecycle, the three execution modes, the recursion, the two gate tiers, and the
 root-level opt-in reviews are documented in `references/stages/pipeline.md` — read it to understand
 what each round is doing.

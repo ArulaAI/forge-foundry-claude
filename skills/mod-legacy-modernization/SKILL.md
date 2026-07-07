@@ -72,7 +72,7 @@ M2's `RiskScore`. M0 owns the chain contract so the workbench skills can stay fo
    is single-SP; `--top-n` bounds the loop breadth (default 10; `0` disables the
    conversions fan-out). **Context passing:** pass each stage its required inputs
    explicitly — the DDL path for `schema`/`stored-procs`, the shared context-dir holding
-   the prior stages' digests (default `.forge-foundry/context/db/`) for `strategy`/`conversions`,
+   the prior stages' digests (default `.foundry/context/db/`) for `strategy`/`conversions`,
    and the run-id for state continuity; never let a subagent inherit this session's
    history. **Failure-modes opt-out:** honor per-failure-mode opt-outs declared in the
    consuming project's `.foundry/failure-modes.yaml` — a consumer-disabled failure mode
@@ -107,7 +107,7 @@ shell out to on the interactive path.
 ## Output
 
 An aggregated `modernization-report.md` (under the context-dir, default
-`.forge-foundry/context/db/`) that rolls up every M1-M4 artifact — schema overview,
+`.foundry/context/db/`) that rolls up every M1-M4 artifact — schema overview,
 stored-procedure risk distribution, proposed decomposition, top-N conversion previews,
 the inherited C8 architecture-review findings (only when the M3 stage ran its optional
 in-session C8 pass), skipped stages, and a reproduction

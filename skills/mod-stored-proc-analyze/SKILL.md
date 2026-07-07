@@ -47,7 +47,7 @@ the exit code. It does **not** reproduce the parse or scoring pipeline in-sessio
    picks the highest-confidence parse); set it explicitly to `oracle`, `tsql`, `mssql`,
    or `db2` when the source is known. Confirm with the user when a fixture mixes
    dialects so a misclassification cannot silently drop procedures. Choose an
-   `--output-dir` (default `.forge-foundry/context/db`). Map any user-named options to the
+   `--output-dir` (default `.foundry/context/db`). Map any user-named options to the
    CLI flags listed under **How to invoke** below.
 2. **Run the extract phase.** Invoke via Bash:
    ```bash
@@ -112,7 +112,7 @@ source — required; directories are walked recursively, symlinks not followed);
 union semantics, applies only when narrowing the candidate set; default include all);
 `--exclude-pattern GLOB` (drop SP names matching the glob — repeatable, applied after
 `--include-pattern` via set difference, only when filtering; default exclude none);
-`--output-dir PATH` (destination, default `.forge-foundry/context/db`); `--format {both,json,markdown}`
+`--output-dir PATH` (destination, default `.foundry/context/db`); `--format {both,json,markdown}`
 (which artifact(s) to emit, default `both`; `--format json` / `--format markdown` write
 only that single artifact). You delegate to `"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-stored-proc-analyze` —
 you do not perform the parse, static profile, IO classification, side-effect detection,
@@ -135,7 +135,7 @@ classification judgments, and re-invokes with `--continue --judgments <path>`. T
 ## Output
 
 By default (`--format both`) the CLI writes two files under `--output-dir` (default
-`.forge-foundry/context/db/`): `stored-procs.json` (the `StoredProcDigest`) and
+`.foundry/context/db/`): `stored-procs.json` (the `StoredProcDigest`) and
 `stored-procs-summary.md` (human-readable summary, procedures sorted by
 `risk_score.total` descending); `--format json` / `--format markdown` write only that
 single artifact. The authoritative output contract (the file names and what each carries,
@@ -146,7 +146,7 @@ the supported dialects, the risk-score composition, and the exit-code scheme) li
 
 - Supported dialects (T1): Oracle PL/SQL, T-SQL (`tsql`/`mssql`), DB2 SQL PL.
   `--dialect auto` picks highest-confidence parse. `source_dialect` is free-form on digest.
-- `--format both` writes under `--output-dir` (default `.forge-foundry/context/db/`):
+- `--format both` writes under `--output-dir` (default `.foundry/context/db/`):
   - `stored-procs.json` — `StoredProcDigest` (Pydantic v2, `extra="forbid"`, schema-versioned
     `"1.0"`, round-trippable via `StoredProcDigest.model_validate_json`). Each `StoredProc`:
     name, schema, language/dialect, `body_loc`, `cyclomatic`, `io_shape`

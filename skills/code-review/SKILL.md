@@ -37,8 +37,8 @@ render the report.
    REF...REF`, e.g. `origin/main...HEAD`), narrow the set to the files that range changed; if the
    diff resolution fails, log a note and review all files instead. If a `--spec` path is given,
    read it as context for relevance. Optionally fold in runtime context: when
-   `.forge-foundry/context/compliance.yaml` (S70) is present its framework list + control IDs replace
-   the generic compliance placeholder, and when `.forge-foundry/context/data-flow.json` (S60) is present
+   `.foundry/context/compliance.yaml` (S70) is present its framework list + control IDs replace
+   the generic compliance placeholder, and when `.foundry/context/data-flow.json` (S60) is present
    the files it marks PII/PCI/PHI become the scoped set — both are optional and silently skipped
    when absent. The result of this phase is one prompt item per source file (id prefix
    `review:<relative-path>`).

@@ -43,7 +43,7 @@ pipeline in-session.
    source SQL dialect. The dialect defaults to `auto` (sqlglot tries each supported dialect and
    picks the highest-confidence parse); set it explicitly to `oracle`, `mssql`, `tsql`, `db2`,
    `postgres`, or `mysql` when the source is known. Choose an `--output-dir` (default
-   `.forge-foundry/context/db`). Map any user-named options to the CLI flags listed under **How to
+   `.foundry/context/db`). Map any user-named options to the CLI flags listed under **How to
    invoke** below.
 2. **Run the extract phase.** Invoke via Bash:
    ```bash
@@ -97,7 +97,7 @@ Invoke as `/mod-db-schema-analyze`. The user passes the DDL source; options map 
 `--ddl-path PATH` (file or directory of `.sql` DDL exports — required); `--connect URI` (live
 DB; **not implemented at T1** — exits `6` with a T1.5 deferral message, reserved so the CLI
 surface stays stable); `--dialect {auto,oracle,mssql,tsql,db2,postgres,mysql}` (source SQL
-dialect, default `auto`); `--output-dir PATH` (destination, default `.forge-foundry/context/db`);
+dialect, default `auto`); `--output-dir PATH` (destination, default `.foundry/context/db`);
 `--hotspot-threshold N` (incoming FK in-degree at or above which a table is flagged a hotspot,
 default `5`); `--format {both,markdown,json}` (which artifact(s) to emit, default `both`;
 `diagrams/schema-dag.mmd` is emitted only under `--format both`). You delegate to
@@ -121,7 +121,7 @@ flag.
 ## Output
 
 By default (`--format both`) the CLI writes three files under `--output-dir` (default
-`.forge-foundry/context/db/`): `schema.json` (the `SchemaDigest`), `schema-summary.md` (human-readable
+`.foundry/context/db/`): `schema.json` (the `SchemaDigest`), `schema-summary.md` (human-readable
 summary), and `diagrams/schema-dag.mmd` (Mermaid hotspot DAG); `--format json` / `--format markdown`
 write only that single artifact. The authoritative output contract (the file names and what each
 carries, the supported dialects, and the exit-code scheme) lives in `## Invariants` below.
@@ -130,7 +130,7 @@ carries, the supported dialects, and the exit-code scheme) lives in `## Invarian
 
 - Supported dialects (T1): Oracle, SQL Server (`mssql`/`tsql`), DB2, PostgreSQL, MySQL.
   `--dialect auto` picks the highest-confidence parse.
-- `--format both` writes under `--output-dir` (default `.forge-foundry/context/db/`):
+- `--format both` writes under `--output-dir` (default `.foundry/context/db/`):
   - `schema.json` — `SchemaDigest` (Pydantic v2, `extra="forbid"`, schema-versioned `"1.0"`,
     round-trippable via `SchemaDigest.model_validate_json`). Each `Table`: columns (with
     `pii_classification`), primary key, foreign keys, indexes, line-of-business classification,

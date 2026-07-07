@@ -39,7 +39,16 @@ def test_every_plb_slug_has_shim_call(repo_root):
     assert missing == [], f"PLB slugs missing shim invocation: {missing}"
 
 
-def test_state_dir_localized(repo_root):
-    offenders = [md.parent.name for md in _skills(repo_root).glob("*/SKILL.md")
+def test_state_dir_preserved(repo_root):
+    # The state dir `.foundry/context` must be PRESERVED, not rewritten. The
+    # engine's Python defaults and every cross-primitive read use `.foundry/context`
+    # (CWD-relative). The earlier `.forge-foundry/context` rewrite broke the M-tier
+    # chain (M3 could not find M1's digest), so it was reverted — no skill body may
+    # carry the localized form.
+    localized = [md.parent.name for md in _skills(repo_root).glob("*/SKILL.md")
+                 if ".forge-foundry/context" in md.read_text()]
+    assert localized == [], f".foundry/context wrongly localized in: {localized}"
+    # And at least one skill must still carry the correct `.foundry/context` path.
+    preserved = [md.parent.name for md in _skills(repo_root).glob("*/SKILL.md")
                  if ".foundry/context" in md.read_text()]
-    assert offenders == [], f".foundry/context not localized in: {offenders}"
+    assert preserved, "expected .foundry/context to be present in skill bodies"

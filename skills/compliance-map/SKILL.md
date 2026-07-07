@@ -156,7 +156,7 @@ with severity and remediation, and (when a code path is given) the aggregated C1
 findings. The JSON document carries a top-level `schema_version: "1.0"` and the SARIF document
 carries it in its `properties` bag (distinct from the SARIF spec version) so a SOX/PCI audit
 replay can pin the report schema shape. Consuming review primitives read this as the
-`.forge-foundry/context/compliance.yaml` compliance context: S11 security-review annotates its findings'
+`.foundry/context/compliance.yaml` compliance context: S11 security-review annotates its findings'
 compliance refs against it, C4 code-review and S30 frontend-design swap their generic GDPR/PCI
 placeholder for its framework list + control IDs. The authoritative output contract (the five
 frameworks, the

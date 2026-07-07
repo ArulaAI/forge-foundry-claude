@@ -111,7 +111,7 @@ report.
 Invoke as `/frontend-design`. The user passes the code path (default: current working
 directory); options refine the run: `--design-system PATH` (token definitions; auto-discovered
 from `.foundry/design-system.yaml`), `--compliance-context PATH` (S70 controls; auto-discovered
-from `.forge-foundry/context/compliance.yaml`), `--spec PATH` (spec context),
+from `.foundry/context/compliance.yaml`), `--spec PATH` (spec context),
 `--git-diff REF...REF` (narrow to a PR diff), `--file-pattern GLOB` (e.g. `src/components/*.tsx`),
 `--lens NAME` (one of the seven lens names, repeatable; default all seven),
 `--format markdown|json|sarif` (default `markdown`), `--confidence-threshold low|medium|high`

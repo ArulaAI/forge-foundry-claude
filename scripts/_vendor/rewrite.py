@@ -17,7 +17,13 @@ _UV_PREFIX = re.compile(
     r"(?=\s+[a-z][a-z0-9]*-[a-z0-9-]*)"  # lookahead: a hyphenated subcommand follows
 )
 _SHIM = '"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate"'
-_STATE_DIR = re.compile(r"\.foundry/context")
+
+# NOTE: The state dir ``.foundry/context`` is intentionally NOT rewritten. The
+# engine's Python defaults and every cross-primitive read use ``.foundry/context``
+# (CWD-relative, so it already lands in the user's project). Rewriting only the
+# docs to ``.forge-foundry/context`` created an 18-file lie that hard-failed the
+# M-tier chain (e.g. M3 could not find M1's digest at the documented path). Leave
+# ``.foundry/context`` untouched so docs match the engine.
 
 # Match a `python -m primitives.<...>` invocation (e.g. the M0 workflow.yaml
 # `command: python -m primitives.legacy_modernization.shared.report_aggregator`),
@@ -35,7 +41,6 @@ _PYTHON_M = re.compile(
 def rewrite_skill_body(text: str) -> tuple[str, int]:
     new, n = _UV_PREFIX.subn(_SHIM, text)
     new, np = _PYTHON_M.subn(_ENGINE_PY, new)
-    new = _STATE_DIR.sub(".forge-foundry/context", new)
     return new, n + np
 
 

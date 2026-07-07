@@ -124,7 +124,7 @@ Invoke as `/mod-playbook-discovery`. You drive `"${CLAUDE_PLUGIN_ROOT}/bin/forge
 two legs — you do not perform the recon, analysis, render, or audit yourself, and the Python CLI
 never calls an LLM. Options map to CLI flags: `--code-root PATH` (the source-tree directory to
 discover — required; a missing or non-directory path exits `2`); `--state-dir PATH` (where the
-per-run artefacts land, default `.forge-foundry/context/playbook`); `--platform-flavor NAME` (default
+per-run artefacts land, default `.foundry/context/playbook`); `--platform-flavor NAME` (default
 `auto` runs the flavor-pack detect-and-pick; an explicit name short-circuits detection);
 `--run-id ID` (per-run subdirectory name under `--state-dir`, default `run` — **must be
 identical on both legs**); `--strict-audit` (fail with exit `6` on ANY Phase D finding, not only
@@ -150,7 +150,7 @@ is the harness — there is no separate harness CLI flag.
 ## Output
 
 The CLI writes the per-run artefacts under `--state-dir/<run-id>/` (default
-`.forge-foundry/context/playbook/run/`): `PLAYBOOK.md` (the 16-section discovery playbook with the
+`.foundry/context/playbook/run/`): `PLAYBOOK.md` (the 16-section discovery playbook with the
 Phase D §Validation Report appended — §1/§2/§8/§14/§15 are now synthesis-authored prose,
 refchecked by Phase D), `diagrams/<name>.mmd` (standalone Mermaid bodies for the
 diagram-bearing sections), `audit.json` (the Phase D `AuditReport`), plus the Phase B artefacts

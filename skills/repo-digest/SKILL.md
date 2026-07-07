@@ -1,7 +1,7 @@
 ---
 name: repo-digest
 description: >
-  Compress a repository into 6 token-budgeted context files under `.forge-foundry/context/`
+  Compress a repository into 6 token-budgeted context files under `.foundry/context/`
   for AI-assistant consumption, or federate peer-repo digests for multi-repo platforms
   (10-25 repos sharing one logical app). The work is deterministic Python (repo
   federation + digest extraction); this body delegates to `"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" repo-digest`
@@ -26,7 +26,7 @@ reproduce the extraction in-session.
 - At the start of a new AI session — give the assistant full repo context.
 - When onboarding to a new codebase — compress it for quick orientation.
 - For multi-repo platforms — federate peer digests into a unified context.
-- When `.forge-foundry/context/` files are stale or missing.
+- When `.foundry/context/` files are stale or missing.
 - When the user asks to "generate a repo digest", "compress the repo for context", or
   "federate peer digests".
 
@@ -83,7 +83,7 @@ reproduce the extraction in-session.
    Zero-Hallucination guard (replacing fabricated names with `⚠️ UNVERIFIED`), and writes
    the final six context files. The CLI prints `WROTE <path>` for each artifact.
 5. **Read what the CLI wrote and summarize.** On exit `0` read the files under
-   `.forge-foundry/context/` (or `--output-dir`) and summarize the digest — or the federated peer
+   `.foundry/context/` (or `--output-dir`) and summarize the digest — or the federated peer
    set — for the user. Surface any `⚠️ UNVERIFIED` markers the narrative carries.
 6. **Non-zero exit (not 7) is a hard stop.** Surface the CLI's stderr to the user and do not
    fabricate a digest. See the exit-code contract under **Invariants** below.
@@ -94,8 +94,8 @@ Invoke as `/repo-digest`. The user passes the path to digest (default: the curre
 directory); options map to CLI flags: `--produce` (generate this repo's digest files) and
 `--federate` (fetch peer-repo digests per `.foundry/platform.yaml`) are mutually exclusive and
 exactly one is required; `--output-dir DIR` (produce only) overrides the default output directory
-(`.forge-foundry/context/`); `--shallow` (federation only) sparse-checkouts each peer's
-`.forge-foundry/context/`; `--max-tokens N` overrides the total token budget from
+(`.foundry/context/`); `--shallow` (federation only) sparse-checkouts each peer's
+`.foundry/context/`; `--max-tokens N` overrides the total token budget from
 `.foundry/repo-digest.yaml`; `--format markdown` selects the output format (only `markdown` in
 v0.4.0); `--include-vendored` re-includes the vendored harness trees (`.foundry`, `.claude`,
 `.github/skills`, …) in the source-file walks (default off; dependency/build dirs stay excluded).
@@ -118,8 +118,8 @@ agent *is* the harness — there is no separate harness CLI flag.
 
 ## Output
 
-`--produce` writes 6 token-budgeted files into `.forge-foundry/context/`; `--federate` writes peer
-digest files under `.forge-foundry/context/peers/<peer>/`. The authoritative output contract (the
+`--produce` writes 6 token-budgeted files into `.foundry/context/`; `--federate` writes peer
+digest files under `.foundry/context/peers/<peer>/`. The authoritative output contract (the
 6 file names and what each carries, the federation layout, and the exit-code scheme) lives in
 `## Invariants` below.
 
@@ -129,7 +129,7 @@ All five extractors exclude `.venv`, `node_modules`, `__pycache__`, `.git`, buil
 
 ## Invariants
 
-- `--produce` writes exactly these 6 files into `.forge-foundry/context/` (or the `--output-dir`
+- `--produce` writes exactly these 6 files into `.foundry/context/` (or the `--output-dir`
   override):
   - `repo-digest.md` — project name, language counts, frameworks, purpose, structure
   - `conventions.md` — lint/format configs + test framework + naming patterns
@@ -137,7 +137,7 @@ All five extractors exclude `.venv`, `node_modules`, `__pycache__`, `.git`, buil
   - `entry-points.md` — main()s, HTTP handlers, Lambda handlers, pytest fixtures
   - `recent-deltas.md` — last N days of commits + most-changed files
   - `dependency-map.md` — internal module graph + external deps
-- `--federate` writes peer digest files under `.forge-foundry/context/peers/<peer>/`, per the
+- `--federate` writes peer digest files under `.foundry/context/peers/<peer>/`, per the
   `member_repos` list in `.foundry/platform.yaml` (validated against the SEC-1 URL policy).
 - Exactly one of `--produce` / `--federate` is required (mutually exclusive); passing both or
   neither exits `2`. The total token budget defaults to ~30K, configurable per-file via

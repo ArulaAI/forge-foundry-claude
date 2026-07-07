@@ -13,11 +13,15 @@ def test_rewrites_uv_run_prefix():
     assert "uv run --project" not in out
 
 
-def test_localizes_state_dir_default():
+def test_state_dir_default_is_preserved():
+    # The state dir must NOT be rewritten: the engine's Python defaults and every
+    # cross-primitive read use `.foundry/context` (CWD-relative). Rewriting only the
+    # docs to `.forge-foundry/context` broke the M-tier chain, so it was reverted.
     body = 'state_dir=".foundry/context/dfm"\n'
     out, _ = rewrite_skill_body(body)
-    assert ".forge-foundry/context/dfm" in out
-    assert ".foundry/context" not in out
+    assert out == body
+    assert ".foundry/context/dfm" in out
+    assert ".forge-foundry/context" not in out
 
 
 def test_idempotent():

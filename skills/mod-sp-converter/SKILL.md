@@ -47,7 +47,7 @@ implementations.
 ## When invoked
 
 1. **Verify the upstream M1/M2 digests are present, then pick the SP + target.**
-   Resolve the context dir (default `.forge-foundry/context/db/`). Confirm `schema.json`
+   Resolve the context dir (default `.foundry/context/db/`). Confirm `schema.json`
    (M1) and `stored-procs.json` (M2) both exist there. If either is missing, stop
    and tell the user to run `/mod-db-schema-analyze` then `/mod-stored-proc-analyze`
    first — a missing upstream digest is a hard stop (the CLI exits 2). Map the
@@ -118,7 +118,7 @@ convert — required, case-sensitive, must match a `StoredProc.name` in the M2
 digest; exits `2` if not found); `--target NAME` (the renderer target, default
 `plan-only`; built-in: `plan-only`, `spring-batch`, `fastapi`; `celery` /
 `spring-boot` ship via FLEX-3 entry point); `--context-dir PATH` (holds the M1
-`schema.json` + M2 `stored-procs.json`, default `.forge-foundry/context/db/`; a missing
+`schema.json` + M2 `stored-procs.json`, default `.foundry/context/db/`; a missing
 upstream digest exits `2`); `--output-dir PATH` (per-SP conversion tree, default
 `<context-dir>/conversions/<sp>/`). You delegate to `"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sp-converter`
 — you do not perform the resolution, plan synthesis, skeleton rendering, notes

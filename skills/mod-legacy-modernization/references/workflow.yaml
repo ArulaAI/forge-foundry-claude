@@ -54,6 +54,6 @@ stages:
     command: "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.legacy_modernization.shared.report_aggregator
     args:
       context_dir: '$context_dir'
-      output: '.forge-foundry/context/db/modernization-report.md'
+      output: '.foundry/context/db/modernization-report.md'
       backend: '$backend'
     skip_when: false

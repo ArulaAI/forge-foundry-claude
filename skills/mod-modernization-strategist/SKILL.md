@@ -44,7 +44,7 @@ that downstream M4 (`/mod-sp-converter`) and C7 (`/work-orchestrator`) consume.
 ## When invoked
 
 1. **Verify the upstream M1/M2 digests are present.** Resolve the context dir (default
-   `.forge-foundry/context/db/`). Confirm `schema.json` (M1) and `stored-procs.json` (M2) both
+   `.foundry/context/db/`). Confirm `schema.json` (M1) and `stored-procs.json` (M2) both
    exist there. If either is missing, stop and tell the user to run `/mod-db-schema-analyze`
    then `/mod-stored-proc-analyze` first — a missing upstream digest is a hard stop (the CLI
    exits 2). Map any user-named options to the CLI flags under **How to invoke** below.
@@ -115,7 +115,7 @@ that downstream M4 (`/mod-sp-converter`) and C7 (`/work-orchestrator`) consume.
 
 Invoke as `/mod-modernization-strategist`. The user passes the context dir; options map to CLI
 flags: `--context-dir PATH` (holds the M1 `schema.json` + M2 `stored-procs.json`, default
-`.forge-foundry/context/db/`; a missing upstream digest exits `2`); `--output-dir PATH` (where the
+`.foundry/context/db/`; a missing upstream digest exits `2`); `--output-dir PATH` (where the
 decomposition + plan + diagrams are written, default `--context-dir`). The charter §3.4 C8
 architecture-review fold is **not** a CLI flag — it is an optional in-session `/architecture-review`
 pass you run over the **source code under modernization** (C8's `CODE_PATH`), folding its findings
