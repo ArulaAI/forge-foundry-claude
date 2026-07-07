@@ -7,6 +7,13 @@ from pathlib import Path
 # Maintainer-only commands that must never ship in the consumer plugin.
 _DENYLIST = {"autowork", "review-pr"}
 
+# Agent names that must never ship in the consumer plugin. ``mainframe-recon`` is
+# a backwards-compat re-export shim (see its .agent.yaml body) for legacy
+# consumer-synced ``.claude/skills/.../subagents/mainframe-recon.md`` paths that do
+# NOT exist in a fresh plugin install — vendoring it would ship a dead pointer to a
+# renamed file (canonical: flavor-recon). Deny it; keep the real ``flavor-recon``.
+_AGENT_DENYLIST = {"mainframe-recon"}
+
 
 @dataclass(frozen=True)
 class PrimitiveSrc:
@@ -80,11 +87,17 @@ def copy_skills(prims: list[PrimitiveSrc], out_skills: Path) -> int:
 
 
 def copy_agents(prims: list[PrimitiveSrc], out_agents: Path, src_repo: Path) -> int:
-    """Convert canonical agents/*.agent.yaml → Claude agent .md via the source emitter.
+    """Convert canonical ``agents/*.agent.yaml`` → Claude Code agent ``.md``.
 
-    The source emitter (forge_sync.emitter.agents.emit_agent) is importable because
-    vendor.py runs with src_repo on sys.path. Falls back to a verbatim copy of the
-    yaml (renamed .md with a fenced block) if the emitter import is unavailable.
+    Uses the source emitter (``forge_sync.emitter.agents.emit_agent`` with the
+    ``claude_code`` target), which produces valid ``---``-frontmatter agent
+    markdown (name/description/tools/model + system-prompt body). The emitter is
+    importable because ``vendor.py`` runs with *src_repo* on ``sys.path``.
+
+    FAIL LOUD: if the real emitter/loader API cannot be imported, this raises
+    rather than silently emitting yaml-in-a-fence stubs — a silent fallback is
+    exactly what shipped unloadable agents before. Agents in ``_AGENT_DENYLIST``
+    (e.g. the ``mainframe-recon`` compat shim) are skipped.
     """
     import sys
     out_agents = Path(out_agents)
@@ -94,24 +107,44 @@ def copy_agents(prims: list[PrimitiveSrc], out_agents: Path, src_repo: Path) -> 
     if not prims_with_agents:
         return 0
     out_agents.mkdir(parents=True, exist_ok=True)
-    sys.path.insert(0, str(src_repo))
+    if str(src_repo) not in sys.path:
+        sys.path.insert(0, str(src_repo))
     try:
-        from forge_sync.emitter.loader import load_canonical_sources  # type: ignore
+        from forge_sync.emitter.loader import load_canonical_agents  # type: ignore
         from forge_sync.emitter.agents import emit_agent  # type: ignore
-        emitter_ok = True
-    except Exception:
-        emitter_ok = False
+    except Exception as exc:  # noqa: BLE001 — re-raised with context below
+        raise RuntimeError(
+            "copy_agents: could not import the real agent emitter API "
+            "(forge_sync.emitter.loader.load_canonical_agents / "
+            "forge_sync.emitter.agents.emit_agent) from "
+            f"{src_repo!r}. Refusing to emit yaml-in-fence stub agents "
+            "(they are unloadable by Claude Code). Fix the source path / API."
+        ) from exc
     n = 0
     for p in prims_with_agents:
-        for yml in sorted(p.agents_dir.glob("*.agent.yaml")):
-            stem = yml.name.replace(".agent.yaml", "")
-            if emitter_ok:
-                sources = load_canonical_sources(p.skill_dir.parent)
-                emitted = emit_agent(sources.agents[stem], "claude_code")  # type: ignore
-                for _relpath, content in emitted.items():
-                    (out_agents / f"{stem}.md").write_text(content)
-            else:
-                (out_agents / f"{stem}.md").write_text(
-                    f"<!-- vendored from {yml.name} -->\n\n```yaml\n{yml.read_text()}\n```\n")
+        primitive_dir = p.skill_dir.parent
+        for agent in load_canonical_agents(primitive_dir):
+            if agent.name in _AGENT_DENYLIST:
+                print(
+                    f"copy_agents: skipping denied agent {agent.name!r} "
+                    f"(from {p.name}) — compat shim, not vendored",
+                    file=sys.stderr,
+                )
+                continue
+            emitted = emit_agent(agent, "claude_code")
+            if not emitted:
+                raise RuntimeError(
+                    f"copy_agents: emit_agent returned no output for agent "
+                    f"{agent.name!r} (from {p.name})"
+                )
+            # emit_agent returns {dest_relpath: content}; for claude_code there is
+            # exactly one entry. Write the content under agents/<name>.md.
+            (content,) = tuple(emitted.values())
+            if not content.startswith("---"):
+                raise RuntimeError(
+                    f"copy_agents: emitted agent {agent.name!r} does not start with "
+                    "'---' frontmatter; refusing to write an invalid agent"
+                )
+            (out_agents / f"{agent.name}.md").write_text(content)
             n += 1
     return n
