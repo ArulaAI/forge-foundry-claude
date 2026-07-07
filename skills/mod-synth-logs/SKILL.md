@@ -17,7 +17,6 @@ description: >
   CICS / VSAM / JCL mainframe logs" — or wants the M6 evidence generator for a
   modernization engagement.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-synth-logs

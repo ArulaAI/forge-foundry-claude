@@ -10,7 +10,6 @@ description: >
   to "analyze a database schema", "profile a legacy DDL dump", "find schema hotspots",
   "build the M1 digest", or wants an object inventory + dependency DAG of a legacy database.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-db-schema-analyze

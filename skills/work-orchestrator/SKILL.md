@@ -15,7 +15,6 @@ description: >
   the full workflow", "drive the pipeline", "spec to ship", or "automate a
   feature from issue to PR".
 allowed-tools: Read, Bash, Task
-delegates-to-cli: true
 ---
 
 # /work-orchestrator

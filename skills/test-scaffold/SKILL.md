@@ -13,7 +13,6 @@ description: >
   the user asks to "scaffold the tests", "set up Playwright / Testcontainers /
   contract tests", "build the integration test harness", "create an e2e project",
   or "materialize the S1 test architecture into runnable tests".
-delegates-to-cli: true
 allowed-tools: Read, Grep, Glob, Bash
 ---
 

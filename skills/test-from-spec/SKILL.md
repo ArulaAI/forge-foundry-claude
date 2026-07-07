@@ -9,7 +9,6 @@ description: >
   the user asks to "generate tests from spec", "write failing tests", "create test
   contracts", "run test-from-spec", or when a finished spec needs failing tests written
   before implementation.
-delegates-to-cli: true
 allowed-tools: Read, Grep, Glob, Bash
 ---
 

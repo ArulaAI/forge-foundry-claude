@@ -11,7 +11,6 @@ description: >
   instructions", "set up BFSI rules", or otherwise wants curated path-scoped coding
   rules wired into both Claude Code and GitHub Copilot from a single source.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /rules-gen

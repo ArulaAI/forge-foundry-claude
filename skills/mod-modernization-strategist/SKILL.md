@@ -13,7 +13,6 @@ description: >
   "decompose a legacy monolith into bounded contexts", "build the M3 plan", "sequence
   a strangler-fig extraction", or "identify modernization anti-patterns".
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-modernization-strategist

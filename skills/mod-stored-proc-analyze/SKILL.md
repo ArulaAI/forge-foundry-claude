@@ -13,7 +13,6 @@ description: >
   legacy stored procs", "score conversion risk", "build the M2 digest", or wants a
   per-SP risk-scored profile of a legacy database's procedure source.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-stored-proc-analyze

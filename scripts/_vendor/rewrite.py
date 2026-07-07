@@ -38,10 +38,33 @@ _PYTHON_M = re.compile(
 )
 
 
+# Strip the forge-internal ``delegates-to-cli: true`` frontmatter key. Claude Code
+# does not recognize it; leaving it in emits a spurious key. Only the exact line
+# inside the leading ``---`` … ``---`` frontmatter block is removed — the body and
+# every other frontmatter key are untouched. (The vendor discovery step reads this
+# key from the SOURCE tree before copy, so stripping it from the vendored output is
+# safe.)
+_DELEGATES_LINE = re.compile(r"^[ \t]*delegates-to-cli[ \t]*:[ \t]*true[ \t]*\r?\n", re.MULTILINE)
+
+
+def strip_delegates_to_cli(text: str) -> tuple[str, int]:
+    """Remove the ``delegates-to-cli: true`` line from the leading frontmatter only."""
+    if not text.startswith("---"):
+        return text, 0
+    end = text.find("\n---", 3)
+    if end == -1:
+        return text, 0
+    fm_end = end + 1  # index just past the newline before the closing ``---``
+    front, body = text[:fm_end], text[fm_end:]
+    new_front, n = _DELEGATES_LINE.subn("", front)
+    return new_front + body, n
+
+
 def rewrite_skill_body(text: str) -> tuple[str, int]:
     new, n = _UV_PREFIX.subn(_SHIM, text)
     new, np = _PYTHON_M.subn(_ENGINE_PY, new)
-    return new, n + np
+    new, nd = strip_delegates_to_cli(new)
+    return new, n + np + nd
 
 
 _REFERENCE_SUFFIXES = (".yaml", ".yml", ".md")

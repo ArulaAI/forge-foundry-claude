@@ -12,7 +12,6 @@ description: >
   "generate a data-flow diagram", or when preparing for a GDPR / CCPA / PCI-DSS
   assessment.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /data-flow-map

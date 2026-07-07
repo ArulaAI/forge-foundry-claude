@@ -9,7 +9,6 @@ description: >
   "compress the repo for context", "federate peer digests", "create repo context files",
   or when onboarding to a new codebase and needing a quick orientation.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /repo-digest

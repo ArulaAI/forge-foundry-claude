@@ -13,7 +13,6 @@ description: >
   "generate a migration scaffold for an SP", "port PL/SQL / T-SQL / DB2 SQL PL to
   Spring Batch / FastAPI", or "build the M4 plan".
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-sp-converter

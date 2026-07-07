@@ -7,7 +7,6 @@ description: >
   bound. Python does all file writes, formatting, testing, and git operations — the body's only
   filesystem effect is authoring change-set JSON. Use when the user asks to "generate code",
   "implement the plan", "run code-gen", or "execute the implementation plan".
-delegates-to-cli: true
 allowed-tools: Read, Grep, Glob, Bash
 ---
 

@@ -16,7 +16,6 @@ description: >
   legacy system", "walk a polyglot source tree", or needs the ground-truth playbook M6
   `/mod-synth-logs` consumes.
 allowed-tools: Read, Bash
-delegates-to-cli: true
 ---
 
 # /mod-playbook-discovery
