@@ -15,7 +15,13 @@ def test_hook_exists_and_executable(repo_root):
 
 def test_shim_exits_69_when_venv_absent(repo_root, tmp_path):
     shim = repo_root / "bin" / "forge-validate"
-    env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(tmp_path))  # no engine/.venv here
+    # Point the SHA-keyed venv home at an empty tmp dir so the venv is guaranteed
+    # absent regardless of the caller's ~/.cache state.
+    env = dict(
+        os.environ,
+        CLAUDE_PLUGIN_ROOT=str(repo_root),
+        FORGE_FOUNDRY_VENV_HOME=str(tmp_path / "venv-home"),
+    )
     r = subprocess.run([str(shim), "repo-digest", "."], env=env,
                        capture_output=True, text=True)
     assert r.returncode == 69
