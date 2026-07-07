@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Resolver shim for the bundled forge-validate engine.
+set -euo pipefail
+: "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT not set}"
+VENV="${CLAUDE_PLUGIN_ROOT}/engine/.venv"
+if [ ! -x "$VENV/bin/forge-validate" ]; then
+  echo "forge-foundry-claude: engine not bootstrapped. The SessionStart hook builds it on first activation; if you see this, run: bash \"${CLAUDE_PLUGIN_ROOT}/hooks/bootstrap.sh\"" >&2
+  exit 69
+fi
+exec "$VENV/bin/forge-validate" "$@"
