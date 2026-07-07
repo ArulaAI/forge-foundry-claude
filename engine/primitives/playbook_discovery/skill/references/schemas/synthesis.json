@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arula-ai.github.io/forge-foundry-primitives/schemas/synthesis.json",
+  "title": "SynthesisJudgments",
+  "description": "Harness-returned synthesis judgments (synthesis.json). Contains one entry per synthesis-driven section; validated by the Python pipeline on --continue before merging into the rendered PLAYBOOK.md. Malformed input → exit 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sections"],
+  "properties": {
+    "sections": {
+      "type": "object",
+      "description": "Map from section-number string to the harness-authored content for that section. Keys are constrained to the five synthesis-driven sections (§1, §2, §8, §14, §15). A missing key causes the pipeline to fall back to the deterministic ⚠ UNVERIFIED stub for that section rather than failing.",
+      "propertyNames": {
+        "enum": ["1", "2", "8", "14", "15"]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/SynthesisSection"
+      }
+    }
+  },
+  "$defs": {
+    "SynthesisSection": {
+      "title": "SynthesisSection",
+      "description": "Harness-authored content for one synthesis-driven playbook section.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "citations"],
+      "properties": {
+        "body": {
+          "type": "string",
+          "description": "Markdown prose for the section. Should be within the word_budget stated in the corresponding SectionPrompt. Non-obvious claims must be backed by path:line citations listed in citations."
+        },
+        "citations": {
+          "type": "array",
+          "description": "List of path:line references grounding claims in the body. Each entry must resolve to a real file in code_root (validated by Phase D refcheck, not by schema validation).",
+          "items": {
+            "type": "string",
+            "description": "A citation in path:line format (e.g. \"billing/engine.py:42\")."
+          }
+        }
+      }
+    }
+  }
+}

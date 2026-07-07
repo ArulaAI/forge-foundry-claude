@@ -1,0 +1,297 @@
+# PCI DSS v4.0 Starter Catalog — forge-foundry compliance-map (S70)
+# Source: PCI DSS v4.0 (published March 2022, effective April 2024)
+# ~25 highest-priority BFSI controls (data protection, auth, logging, secure SDLC)
+# Each control links to the authoritative PCI DSS v4.0 section.
+framework: pci-dss-4.0
+version: "4.0"
+released: "2024-03-31"
+controls:
+  - id: "1.2.1"
+    title: "Network security controls are implemented and maintained"
+    family: "network-security"
+    severity: high
+    evidence_hints:
+      - "firewall rules, security groups, network ACLs restricting inbound/outbound"
+      - "documented and approved rule sets reviewed at least every six months"
+    code_signatures:
+      - 'SecurityGroup|inbound_rule|ingress_rule|firewall_rule|network_acl'
+    cwe_ids: ["CWE-284"]
+    # Source: PCI DSS v4.0 §1.2.1
+
+  - id: "1.3.2"
+    title: "Inbound traffic to the CDE is restricted to only that which is necessary"
+    family: "network-security"
+    severity: high
+    evidence_hints:
+      - "allowlist-only inbound rules to the cardholder data environment"
+      - "deny-all default with specific permits"
+    code_signatures:
+      - 'deny.all|default.deny|whitelist|allowlist|0\.0\.0\.0/0'
+    cwe_ids: ["CWE-284"]
+    # Source: PCI DSS v4.0 §1.3.2
+
+  - id: "3.3.1"
+    title: "SAD is not retained after authorization"
+    family: "data-protection"
+    severity: critical
+    evidence_hints:
+      - "CVV/CVC deletion after authorization"
+      - "no storage of track data, CVV2, PIN blocks"
+    code_signatures:
+      - 'cvv|cvc|track_data|track1|track2|pin_block'
+    cwe_ids: ["CWE-312", "CWE-359"]
+    # Source: PCI DSS v4.0 §3.3.1
+
+  - id: "3.5.1"
+    title: "PAN is rendered unreadable anywhere it is stored"
+    family: "data-protection"
+    severity: critical
+    evidence_hints:
+      - "encryption-at-rest: KMS, AES-256, envelope encryption"
+      - "tokenization layer replacing PAN with a surrogate token in app DB"
+      - "column-level encryption or field-level encryption on PAN columns"
+    code_signatures:
+      - 'KMS|AES.?256|tokenize|tokenization|encrypt_pan|vault_token'
+    cwe_ids: ["CWE-311", "CWE-312"]
+    # Source: PCI DSS v4.0 §3.5.1
+
+  - id: "3.5.1.1"
+    title: "Hashes used to render PAN unreadable use keyed cryptography"
+    family: "data-protection"
+    severity: high
+    evidence_hints:
+      - "HMAC-SHA256 keyed hash for PAN (not plain SHA-1/MD5)"
+      - "salt + PBKDF2/bcrypt NOT used alone — must use keyed crypto"
+    code_signatures:
+      - 'hmac|HMAC|hmac_sha256|keyed.hash'
+    cwe_ids: ["CWE-328", "CWE-327"]
+    # Source: PCI DSS v4.0 §3.5.1.1
+
+  - id: "3.6.1"
+    title: "Procedures for protecting cryptographic keys used to protect stored account data"
+    family: "data-protection"
+    severity: high
+    evidence_hints:
+      - "key management procedures: generation, distribution, storage, rotation, retirement"
+      - "HSM usage for key protection"
+    code_signatures:
+      - 'key_rotation|rotate_key|HSM|kms\.create_key|GenerateDataKey'
+    cwe_ids: ["CWE-321", "CWE-798"]
+    # Source: PCI DSS v4.0 §3.6.1
+
+  - id: "3.7.1"
+    title: "Cryptographic keys are protected against disclosure and misuse"
+    family: "data-protection"
+    severity: high
+    evidence_hints:
+      - "secrets manager or HSM for key storage (not env variables or source code)"
+      - "key access audit logs"
+    code_signatures:
+      - 'SecretsManager|SecretManager|Vault|aws_secretsmanager|get_secret_value'
+    cwe_ids: ["CWE-321", "CWE-798"]
+    # Source: PCI DSS v4.0 §3.7.1
+
+  - id: "4.2.1"
+    title: "Strong cryptography is used to safeguard PAN during transmission over open, public networks"
+    family: "encryption-in-transit"
+    severity: critical
+    evidence_hints:
+      - "TLS 1.2+ enforced for all PAN-carrying endpoints"
+      - "HSTS headers, certificate pinning for mobile"
+    code_signatures:
+      - 'TLSv1\.[23]|ssl_version|PROTOCOL_TLS|require_ssl|tls_min_version'
+    cwe_ids: ["CWE-319", "CWE-326"]
+    # Source: PCI DSS v4.0 §4.2.1
+
+  - id: "4.2.1.1"
+    title: "Certificates used for PAN transmission are trusted and do not expire"
+    family: "encryption-in-transit"
+    severity: high
+    evidence_hints:
+      - "automated certificate renewal (Let's Encrypt ACME, ACM)"
+      - "certificate expiry monitoring and alerts"
+    code_signatures:
+      - 'acm|ACM|certbot|certificate_expiry|ssl_certificate'
+    cwe_ids: ["CWE-295"]
+    # Source: PCI DSS v4.0 §4.2.1.1
+
+  - id: "6.2.4"
+    title: "Software development practices prevent introduction of security vulnerabilities"
+    family: "secure-sdlc"
+    severity: high
+    evidence_hints:
+      - "SAST/DAST tooling in CI pipeline"
+      - "secure coding training for developers"
+      - "code review checklist including security items"
+    code_signatures:
+      - 'bandit|semgrep|sonarqube|snyk|SAST|DAST|checkmarx'
+    cwe_ids: ["CWE-1006"]
+    # Source: PCI DSS v4.0 §6.2.4
+
+  - id: "6.3.2"
+    title: "An inventory of bespoke and custom software is maintained"
+    family: "secure-sdlc"
+    severity: medium
+    evidence_hints:
+      - "SBOM (Software Bill of Materials) maintained and updated per release"
+      - "component registry or dependency inventory"
+    code_signatures:
+      - 'sbom|SBOM|cyclonedx|spdx|software.bill'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §6.3.2
+
+  - id: "6.4.1"
+    title: "Public-facing web applications are protected against attacks"
+    family: "secure-sdlc"
+    severity: high
+    evidence_hints:
+      - "WAF (Web Application Firewall) in blocking mode in front of public endpoints"
+      - "annual penetration test or automated DAST scan"
+    code_signatures:
+      - 'WAF|waf|ModSecurity|CloudFront.WAF|aws_waf|azure_waf'
+    cwe_ids: ["CWE-1336"]
+    # Source: PCI DSS v4.0 §6.4.1
+
+  - id: "8.2.1"
+    title: "All user access uses unique IDs and strong authentication"
+    family: "auth"
+    severity: high
+    evidence_hints:
+      - "no shared accounts; individual IDs for all users and administrators"
+      - "password complexity enforcement"
+    code_signatures:
+      - 'unique_id|individual.account|shared.account|service.account'
+    cwe_ids: ["CWE-287", "CWE-521"]
+    # Source: PCI DSS v4.0 §8.2.1
+
+  - id: "8.3.6"
+    title: "Passwords/passphrases must meet minimum length of 12 characters"
+    family: "auth"
+    severity: high
+    evidence_hints:
+      - "password policy enforcing minimum 12-character length"
+      - "password complexity: upper, lower, numeric, special character"
+    code_signatures:
+      - 'min_length.*12|password_length|MIN_PASSWORD_LENGTH|minLength.*12'
+    cwe_ids: ["CWE-521"]
+    # Source: PCI DSS v4.0 §8.3.6
+
+  - id: "8.4.2"
+    title: "MFA is implemented for all non-console access to the CDE"
+    family: "auth"
+    severity: critical
+    evidence_hints:
+      - "MFA enforced for all admin console and SSH access to CDE systems"
+      - "TOTP, hardware key, or push authentication integrated"
+    code_signatures:
+      - 'MFA|mfa|totp|TOTP|two.factor|2fa|2FA|DuoAuth|AuthenticatorApp'
+    cwe_ids: ["CWE-308"]
+    # Source: PCI DSS v4.0 §8.4.2
+
+  - id: "8.6.1"
+    title: "System/application accounts are managed by policies and procedures"
+    family: "auth"
+    severity: medium
+    evidence_hints:
+      - "service account passwords rotated periodically"
+      - "service accounts assigned only necessary privileges (least privilege)"
+    code_signatures:
+      - 'service.account|rotate_password|credential_rotation|IAM.role'
+    cwe_ids: ["CWE-250"]
+    # Source: PCI DSS v4.0 §8.6.1
+
+  - id: "10.2.1"
+    title: "Audit logs capture all individual user access to cardholder data"
+    family: "logging"
+    severity: critical
+    evidence_hints:
+      - "application-level audit log capturing user, timestamp, action, resource for PAN access"
+      - "structured logs exported to immutable log store"
+    code_signatures:
+      - 'audit.log|AuditLog|pan.access|cardholder.access|log_access'
+    cwe_ids: ["CWE-778"]
+    # Source: PCI DSS v4.0 §10.2.1
+
+  - id: "10.2.1.1"
+    title: "Audit logs capture all actions taken by individuals with root or admin privileges"
+    family: "logging"
+    severity: high
+    evidence_hints:
+      - "privileged action logging: sudo, root commands, admin API calls"
+      - "CloudTrail / audit log for all IAM-privileged operations"
+    code_signatures:
+      - 'cloudtrail|CloudTrail|privileged.action|sudo.log|admin.audit'
+    cwe_ids: ["CWE-778"]
+    # Source: PCI DSS v4.0 §10.2.1.1
+
+  - id: "10.3.2"
+    title: "Audit logs are protected to prevent modifications"
+    family: "logging"
+    severity: high
+    evidence_hints:
+      - "append-only log store (S3 Object Lock, Azure Immutable Blob Storage)"
+      - "log integrity verification (hash chaining)"
+    code_signatures:
+      - 'ObjectLock|object_lock|immutable.log|append.only|log.integrity'
+    cwe_ids: ["CWE-778", "CWE-345"]
+    # Source: PCI DSS v4.0 §10.3.2
+
+  - id: "10.4.1"
+    title: "Audit logs are reviewed at least once daily"
+    family: "logging"
+    severity: medium
+    evidence_hints:
+      - "automated log aggregation with alerting (SIEM, CloudWatch Logs Insights)"
+      - "daily alert digests for anomaly detection"
+    code_signatures:
+      - 'SIEM|CloudWatch.Logs|log.review|daily.alert|anomaly.detection'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §10.4.1
+
+  - id: "11.3.1"
+    title: "Internal vulnerability scans are performed at least quarterly"
+    family: "vulnerability-management"
+    severity: high
+    evidence_hints:
+      - "automated quarterly vulnerability scanning (Qualys, Nessus, AWS Inspector)"
+      - "scan results tracked to remediation"
+    code_signatures:
+      - 'Inspector|qualys|nessus|vulnerability.scan|trivy|grype'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §11.3.1
+
+  - id: "11.4.1"
+    title: "A penetration testing methodology is implemented"
+    family: "vulnerability-management"
+    severity: high
+    evidence_hints:
+      - "annual penetration test by qualified internal resource or ASV"
+      - "penetration test report with remediation tracking"
+    code_signatures:
+      - 'pen.test|pentest|penetration|OWASP.ZAP|burp.suite'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §11.4.1
+
+  - id: "12.3.4"
+    title: "Hardware and software technologies are reviewed at least once every 12 months"
+    family: "policy"
+    severity: medium
+    evidence_hints:
+      - "annual technology review policy and evidence of review completion"
+      - "deprecation tracking for EOL components"
+    code_signatures:
+      - 'EOL|end.of.life|deprecat|technology.review'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §12.3.4
+
+  - id: "12.10.1"
+    title: "An incident response plan exists and is ready to be activated"
+    family: "incident-response"
+    severity: high
+    evidence_hints:
+      - "documented incident response plan (IRP) with roles and escalation paths"
+      - "runbooks for payment data breach scenarios"
+    code_signatures:
+      - 'incident.response|IRP|runbook|escalation.path|on.call'
+    cwe_ids: []
+    # Source: PCI DSS v4.0 §12.10.1

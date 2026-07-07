@@ -1,0 +1,299 @@
+# SOX 404 IT General Controls (ITGC) Starter Catalog — forge-foundry compliance-map (S70)
+# Source: Sarbanes-Oxley Act §404, PCAOB AS 2201, COSO 2013 framework
+# Aligned to COBIT 5/2019 IT process domains: Change Management, Access Controls,
+# Operations, Backup & Recovery.
+# ~22 controls covering the primary ITGC domains auditors test under SOX 404.
+framework: sox-404
+version: "2002"
+released: "2002-07-30"
+controls:
+  # ---------------------------------------------------------------------------
+  # Change Management (CM)
+  # ---------------------------------------------------------------------------
+  - id: "CM-1"
+    title: "All changes to production systems are authorized before implementation"
+    family: "change-management"
+    severity: high
+    evidence_hints:
+      - "change request / ticket created and approved before any production change"
+      - "CI/CD pipeline requires approval gate before production deployment"
+    code_signatures:
+      - 'change.request|JIRA|ServiceNow|approval.gate|change.ticket|ITSM'
+    cwe_ids: []
+    # Source: COSO 2013 CC8.1 / COBIT BAI06
+
+  - id: "CM-2"
+    title: "Changes are tested in non-production environments before promotion"
+    family: "change-management"
+    severity: high
+    evidence_hints:
+      - "staging/UAT environment exists and tests run before production deploy"
+      - "environment promotion policy documented (dev → staging → prod)"
+    code_signatures:
+      - 'staging|UAT|pre.prod|test.environment|environment.promotion'
+    cwe_ids: []
+    # Source: COSO 2013 CC8.1 / COBIT BAI07
+
+  - id: "CM-3"
+    title: "Emergency changes have a compensating post-hoc approval process"
+    family: "change-management"
+    severity: medium
+    evidence_hints:
+      - "emergency change policy documented; retrospective approval within 24h"
+      - "hotfix/emergency PR labelled and reviewed post-merge"
+    code_signatures:
+      - 'emergency.change|hotfix|break.glass|emergency.deploy|post.approval'
+    cwe_ids: []
+    # Source: COBIT BAI06.04
+
+  - id: "CM-4"
+    title: "Segregation of duties: developers cannot promote their own changes to production"
+    family: "change-management"
+    severity: critical
+    evidence_hints:
+      - "branch protection rules require a second reviewer (not the author) to approve PRs"
+      - "deployment pipeline prevents self-approval; RBAC separates developer and deployer roles"
+    code_signatures:
+      - 'branch.protection|require.review|CODEOWNERS|required.approvals|segregation.of.duties'
+    cwe_ids: ["CWE-284"]
+    # Source: COSO 2013 CC8.1 / PCAOB AS 2201
+
+  - id: "CM-5"
+    title: "Change log maintained for all production system modifications"
+    family: "change-management"
+    severity: high
+    evidence_hints:
+      - "audit log / deploy log capturing who deployed what and when"
+      - "deployment records in ITSM tool or CI/CD audit trail"
+    code_signatures:
+      - 'deployment.log|audit.trail|deploy.record|release.log|change.log'
+    cwe_ids: []
+    # Source: COSO 2013 CC8.1 / COBIT MEA02
+
+  # ---------------------------------------------------------------------------
+  # Access Controls (AC)
+  # ---------------------------------------------------------------------------
+  - id: "AC-1"
+    title: "Access to production systems requires formal provisioning and approval"
+    family: "access-controls"
+    severity: high
+    evidence_hints:
+      - "access request workflow with manager/owner approval before provisioning"
+      - "JIT (Just-in-Time) access for elevated privilege with expiry"
+    code_signatures:
+      - 'access.request|provision.access|JIT|just.in.time|access.approval'
+    cwe_ids: ["CWE-284"]
+    # Source: COSO 2013 CC6.1 / COBIT APO01.06
+
+  - id: "AC-2"
+    title: "Access rights are reviewed at least semi-annually and revoked when no longer needed"
+    family: "access-controls"
+    severity: high
+    evidence_hints:
+      - "access recertification campaign documented and completed semi-annually"
+      - "terminated employee de-provisioning within 24h of HR notification"
+    code_signatures:
+      - 'access.review|recertification|deprovisioning|revoke.access|offboarding'
+    cwe_ids: ["CWE-284"]
+    # Source: COSO 2013 CC6.2 / COBIT APO01.06
+
+  - id: "AC-3"
+    title: "Generic/shared accounts are prohibited; individual accountability enforced"
+    family: "access-controls"
+    severity: high
+    evidence_hints:
+      - "no shared credentials for production access"
+      - "service accounts identified separately and not used by humans"
+    code_signatures:
+      - 'shared.account|generic.account|service.account|individual.account'
+    cwe_ids: ["CWE-287"]
+    # Source: COSO 2013 CC6.1
+
+  - id: "AC-4"
+    title: "Privileged access (admin, root, DBA) is restricted and monitored"
+    family: "access-controls"
+    severity: critical
+    evidence_hints:
+      - "privileged access management (PAM) solution in place for admin accounts"
+      - "admin sessions recorded and reviewed"
+    code_signatures:
+      - 'PAM|privileged.access|CyberArk|HashiCorp.Vault|admin.session|sudo.log'
+    cwe_ids: ["CWE-269"]
+    # Source: COSO 2013 CC6.3 / COBIT DSS05.04
+
+  - id: "AC-5"
+    title: "Multi-factor authentication enforced for all remote and privileged access"
+    family: "access-controls"
+    severity: critical
+    evidence_hints:
+      - "MFA required for all VPN, bastion host, and cloud console access"
+      - "SSO with MFA for all production system logins"
+    code_signatures:
+      - 'MFA|mfa|two.factor|2FA|authenticator|okta|azure.ad.mfa'
+    cwe_ids: ["CWE-308"]
+    # Source: COSO 2013 CC6.1 / PCI-DSS cross-reference
+
+  - id: "AC-6"
+    title: "Least-privilege principle applied to all system and application accounts"
+    family: "access-controls"
+    severity: high
+    evidence_hints:
+      - "IAM roles/policies follow least privilege; no wildcard (*) resource grants"
+      - "application service accounts have read-only access where write is not needed"
+    code_signatures:
+      - 'least.privilege|IAM.role|deny.by.default|no.wildcard|minimum.permission'
+    cwe_ids: ["CWE-250"]
+    # Source: COSO 2013 CC6.3 / COBIT APO01.06
+
+  - id: "AC-7"
+    title: "Password/credential policy meets complexity and rotation requirements"
+    family: "access-controls"
+    severity: medium
+    evidence_hints:
+      - "password policy: minimum 12 characters, complexity enforced, rotation period"
+      - "secret rotation automated for service credentials (AWS Secrets Manager rotation)"
+    code_signatures:
+      - 'password.policy|credential.rotation|SecretRotation|rotate.secret|pw.complexity'
+    cwe_ids: ["CWE-521"]
+    # Source: COSO 2013 CC6.1
+
+  - id: "AC-8"
+    title: "Access to financial data is logged and monitored for anomalies"
+    family: "access-controls"
+    severity: high
+    evidence_hints:
+      - "database access logging enabled for financial tables"
+      - "SIEM alerts on unusual query patterns or off-hours access"
+    code_signatures:
+      - 'db.audit|database.log|financial.access.log|query.log|SIEM.alert'
+    cwe_ids: ["CWE-778"]
+    # Source: COSO 2013 CC7.2 / SOX 404 auditor expectation
+
+  # ---------------------------------------------------------------------------
+  # Operations (OP)
+  # ---------------------------------------------------------------------------
+  - id: "OP-1"
+    title: "Production jobs and batch processes are monitored and failures alerted"
+    family: "operations"
+    severity: high
+    evidence_hints:
+      - "batch job monitoring with alerting on failures or missed schedules"
+      - "scheduled job framework with retry logic and alerting"
+    code_signatures:
+      - 'batch.monitor|job.alert|cron.monitor|job.failure|CloudWatch.Events|EventBridge'
+    cwe_ids: []
+    # Source: COBIT DSS01.02
+
+  - id: "OP-2"
+    title: "Incident management process exists for production issues"
+    family: "operations"
+    severity: high
+    evidence_hints:
+      - "on-call rotation documented with escalation path"
+      - "incident management runbooks and post-mortem process"
+    code_signatures:
+      - 'on.call|PagerDuty|OpsGenie|incident.runbook|post.mortem|escalation'
+    cwe_ids: []
+    # Source: COBIT DSS02
+
+  - id: "OP-3"
+    title: "Capacity and performance are monitored against thresholds"
+    family: "operations"
+    severity: medium
+    evidence_hints:
+      - "CPU, memory, disk utilisation monitored with defined thresholds and alerts"
+      - "auto-scaling or capacity plan documented"
+    code_signatures:
+      - 'CloudWatch|Prometheus|Grafana|capacity.alert|auto.scaling|resource.threshold'
+    cwe_ids: []
+    # Source: COBIT DSS01.03
+
+  - id: "OP-4"
+    title: "System clocks synchronised (NTP) for log correlation"
+    family: "operations"
+    severity: medium
+    evidence_hints:
+      - "NTP client configured and synchronised to authoritative time source"
+      - "log timestamps consistent across all system components"
+    code_signatures:
+      - 'NTP|chrony|timesyncd|ntp.server|clock.sync'
+    cwe_ids: []
+    # Source: PCI-DSS 10.6.1 / SOX log integrity requirement
+
+  - id: "OP-5"
+    title: "Patch management: critical patches applied within defined SLA"
+    family: "operations"
+    severity: high
+    evidence_hints:
+      - "patch management policy with SLA: critical patches within 30 days"
+      - "automated OS and dependency patching (Dependabot, AWS SSM Patch Manager)"
+    code_signatures:
+      - 'Dependabot|SSM.Patch|patch.management|vulnerability.patch|patch.SLA'
+    cwe_ids: []
+    # Source: COBIT APO12.05
+
+  # ---------------------------------------------------------------------------
+  # Backup & Recovery (BR)
+  # ---------------------------------------------------------------------------
+  - id: "BR-1"
+    title: "Backups of critical financial data are performed at least daily"
+    family: "backup-recovery"
+    severity: critical
+    evidence_hints:
+      - "automated daily backups of all financial databases"
+      - "backup schedule documented and monitored for completeness"
+    code_signatures:
+      - 'backup.schedule|daily.backup|RDS.backup|database.snapshot|S3.backup'
+    cwe_ids: []
+    # Source: COBIT DSS04.07 / SOX 404 business continuity
+
+  - id: "BR-2"
+    title: "Backups are stored in a separate location from primary systems"
+    family: "backup-recovery"
+    severity: high
+    evidence_hints:
+      - "offsite or cross-region backup storage configured"
+      - "backup replication to secondary region or tape offsite"
+    code_signatures:
+      - 'cross.region|offsite.backup|backup.replication|secondary.region|DR.bucket'
+    cwe_ids: []
+    # Source: COBIT DSS04.07
+
+  - id: "BR-3"
+    title: "Backup restoration is tested at least annually"
+    family: "backup-recovery"
+    severity: high
+    evidence_hints:
+      - "annual disaster recovery test with successful restoration documented"
+      - "automated restore test with validation of data integrity"
+    code_signatures:
+      - 'restore.test|DR.test|backup.restore|recovery.test|BCP.test'
+    cwe_ids: []
+    # Source: COBIT DSS04.04 / SOX 404 business continuity
+
+  # ---------------------------------------------------------------------------
+  # Programme and Project Management (PPM)
+  # ---------------------------------------------------------------------------
+  - id: "PPM-1"
+    title: "Financial reporting systems changes go through formal SDLC"
+    family: "programme-management"
+    severity: high
+    evidence_hints:
+      - "change management policy covers financial reporting systems explicitly"
+      - "formal SDLC with requirements, design, testing, and approval gates"
+    code_signatures:
+      - 'SDLC|software.lifecycle|change.policy|requirements.doc|design.review'
+    cwe_ids: []
+    # Source: PCAOB AS 2201 / COSO 2013
+
+  - id: "PPM-2"
+    title: "Management review of IT general control effectiveness"
+    family: "programme-management"
+    severity: medium
+    evidence_hints:
+      - "quarterly or annual ITGC effectiveness review documented"
+      - "control owner sign-off on ITGC testing results"
+    code_signatures:
+      - 'ITGC.review|control.effectiveness|management.review|SOX.testing'
+    cwe_ids: []
+    # Source: PCAOB AS 2201 §B11

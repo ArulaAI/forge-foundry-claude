@@ -14,6 +14,10 @@ def _fake_src(tmp_path) -> Path:
     (src / "primitives" / "_shared" / "__init__.py").write_text("")
     (src / "primitives" / "data_flow_map" / "shared").mkdir(parents=True)
     (src / "primitives" / "data_flow_map" / "shared" / "__init__.py").write_text("")
+    # skill/references/ data files the shared Python loads at import/runtime
+    (src / "primitives" / "data_flow_map" / "skill" / "references").mkdir(parents=True)
+    (src / "primitives" / "data_flow_map" / "skill" / "references" / "rules.yaml").write_text(
+        "rules: [one, two]\n")
     (src / "pyproject.toml").write_text(
         '[project]\nname="forge-foundry-primitives"\n'
         'dependencies=["click>=8","pydantic>=2","sqlglot>=20"]\n')
@@ -30,6 +34,19 @@ def test_copy_engine_brings_forge_validate(tmp_path):
     assert (out / "forge_validate" / "cli.py").is_file()
     assert (out / "primitives" / "_shared" / "__init__.py").is_file()
     assert (out / "primitives" / "data_flow_map" / "shared" / "__init__.py").is_file()
+
+
+def test_copy_engine_brings_skill_references(tmp_path):
+    src = _fake_src(tmp_path)
+    prims = [PrimitiveSrc("data_flow_map", "data-flow-map",
+                          src / "primitives/data_flow_map/skill", None, True, True)]
+    out = tmp_path / "engine"
+    copy_engine(src, prims, out)
+    ref = out / "primitives" / "data_flow_map" / "skill" / "references" / "rules.yaml"
+    assert ref.is_file()
+    assert ref.read_text() == "rules: [one, two]\n"
+    # skill/ is a data dir, not a package — no __init__.py added under it.
+    assert not (out / "primitives" / "data_flow_map" / "skill" / "__init__.py").exists()
 
 
 def test_generated_pyproject_has_console_script(tmp_path):

@@ -21,7 +21,7 @@ dependencies = [
 forge-validate = "forge_validate.cli:main"
 
 [tool.setuptools]
-packages = ["forge_validate", "primitives"]
+packages = ["forge_validate", "forge_sync", "primitives"]
 
 [tool.setuptools.package-dir]
 "" = "."

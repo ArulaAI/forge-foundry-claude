@@ -1,0 +1,41 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+// TODO: Import the component under test.
+// import MyComponent from '../src/MyComponent';
+
+// TODO: Uncomment to mock a module dependency.
+// vi.mock('../src/myService', () => ({ fetchData: vi.fn() }));
+
+// Tests for {criterion_id}
+
+describe('{criterion_id}', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders and responds to user interaction', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    // TODO: Render the component with required props, e.g.:
+    // render(<MyComponent prop="value" />);
+
+    // Act
+    // TODO: Simulate user interaction, e.g.:
+    // await user.click(screen.getByRole('button', { name: /submit/i }));
+
+    // Assert
+    // TODO: Assert the expected DOM state, e.g.:
+    // expect(screen.getByText(/success/i)).toBeInTheDocument();
+  });
+
+  it('handles an error state', () => {
+    // Arrange
+    // TODO: Configure a mock to return an error or set up invalid props.
+
+    // Act / Assert
+    expect(() => {
+      // TODO: Render the component in an invalid state or call a handler that should throw.
+    }).toThrow(); // TODO: optionally pass the expected error message.
+  });
+});

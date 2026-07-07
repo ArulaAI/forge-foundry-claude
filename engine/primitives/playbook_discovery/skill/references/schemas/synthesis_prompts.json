@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arula-ai.github.io/forge-foundry-primitives/schemas/synthesis_prompts.json",
+  "title": "SynthesisPrompts",
+  "description": "Python-emitted prompts artifact written by --extract-only; consumed by the harness to produce synthesis.json. One prompt entry per synthesis-driven section (§1, §2, §8, §14, §15).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "code_root", "sections"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Opaque run identifier; matches the --run-id passed to the CLI and the state-dir subdirectory name."
+    },
+    "code_root": {
+      "type": "string",
+      "description": "Absolute path to the analysed source tree, as resolved by the CLI."
+    },
+    "sections": {
+      "type": "array",
+      "description": "Ordered list of per-section prompt bundles. Contains exactly the five synthesis-driven sections (§1, §2, §8, §14, §15), but the schema does not enforce ordering or uniqueness — the loader does.",
+      "items": {
+        "$ref": "#/$defs/SectionPrompt"
+      }
+    }
+  },
+  "$defs": {
+    "SectionPrompt": {
+      "title": "SectionPrompt",
+      "description": "Prompt bundle for one synthesis-driven playbook section.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "title", "word_budget", "digest_slice", "source_files", "citation_rule"],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "description": "Playbook section number. Constrained to the five synthesis-driven sections.",
+          "enum": [1, 2, 8, 14, 15]
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable section title (e.g. \"Executive Summary\")."
+        },
+        "word_budget": {
+          "type": "integer",
+          "description": "Soft word-count target for the section body the harness should produce.",
+          "minimum": 1
+        },
+        "digest_slice": {
+          "type": "object",
+          "description": "Section-relevant subset of AnalysisDigest entities extracted by Python. The harness grounds its analysis in this slice rather than the full digest to bound token cost."
+        },
+        "source_files": {
+          "type": "array",
+          "description": "Python-selected bounded set of source file paths (relative to code_root) the harness should Read for deeper grounding.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "citation_rule": {
+          "type": "string",
+          "description": "Instruction to the harness on how citations must be formatted (e.g. \"Every non-obvious claim carries a `path:line` citation present in code_root.\")."
+        }
+      }
+    }
+  }
+}

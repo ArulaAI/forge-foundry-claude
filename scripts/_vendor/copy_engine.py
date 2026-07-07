@@ -24,7 +24,7 @@ dependencies = [
 forge-validate = "forge_validate.cli:main"
 
 [tool.setuptools]
-packages = ["forge_validate", "primitives"]
+packages = ["forge_validate", "forge_sync", "primitives"]
 
 [tool.setuptools.package-dir]
 "" = "."
@@ -62,6 +62,11 @@ def copy_engine(src_repo: Path, prims: list[PrimitiveSrc], out_engine: Path,
     out_engine = Path(out_engine)
     # forge_validate
     _copy_tree_no_symlinks(src_repo / "forge_validate", out_engine / "forge_validate")
+    # forge_sync — the `validate` command (naming + manifest checks) imports
+    # forge_sync.manifest_reader, so the sync package must ship in the engine too
+    # or `forge-validate --help` (which loads every registered command) crashes
+    # with ModuleNotFoundError: forge_sync.
+    _copy_tree_no_symlinks(src_repo / "forge_sync", out_engine / "forge_sync")
     # primitives package root + all shared underscore-prefixed modules/packages
     # (_shared, _sdet, _renderer_registry.py, _response_schema_validator.py,
     #  _tool_version.py, _xml_safety.py, …) — cross-primitive engine deps.
@@ -89,6 +94,15 @@ def copy_engine(src_repo: Path, prims: list[PrimitiveSrc], out_engine: Path,
             src_pkg_init = src_repo / "primitives" / p.name / "__init__.py"
             pkg_init.write_text(
                 src_pkg_init.read_text() if src_pkg_init.is_file() else "")
+        # Also copy skill/references/ data files (YAML rule catalogs, JSON
+        # schemas, catalogs/) — the shared Python loads these at import/runtime
+        # via Path(__file__).parent.parent / "skill" / "references" / …, which
+        # expects the source sibling layout. NOT the SKILL.md body or scripts/;
+        # skill/ is a data dir here, so no __init__.py is added.
+        src_refs = src_repo / "primitives" / p.name / "skill" / "references"
+        if src_refs.is_dir():
+            _copy_tree_no_symlinks(
+                src_refs, out_engine / "primitives" / p.name / "skill" / "references")
     # generated pyproject
     deps = _pinned_deps(src_repo)
     deps_block = "\n".join(f'    "{d}",' for d in deps)

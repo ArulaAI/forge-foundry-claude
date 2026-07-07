@@ -1,0 +1,54 @@
+using Xunit;
+using Moq;
+// TODO: Add using directives for the namespace under test.
+// using MyNamespace;
+
+// Tests for {criterion_id}
+
+namespace {criterion_id}.Tests;
+
+public class {criterion_id}Tests
+{
+    // TODO: Declare Mock<T> fields for each dependency, e.g.:
+    // private readonly Mock<IMyDependency> _mockDep = new Mock<IMyDependency>();
+    // private readonly MyClass _subject;
+
+    public {criterion_id}Tests()
+    {
+        // TODO: Wire up the subject under test with mocks, e.g.:
+        // _subject = new MyClass(_mockDep.Object);
+    }
+
+    [Fact]
+    public void HappyPath_ReturnsExpectedResult()
+    {
+        // Arrange
+        // TODO: Set up mock expectations and input values, e.g.:
+        // _mockDep.Setup(d => d.DoWork()).Returns("expected");
+
+        // Act
+        // TODO: Call the method under test, e.g.:
+        // var result = _subject.Execute();
+
+        // Assert
+        // TODO: Replace with the actual assertion, e.g.:
+        // Assert.Equal("expected", result);
+    }
+
+    [Theory]
+    [InlineData(null)]   // TODO: Add representative invalid inputs.
+    [InlineData("")]
+    public void NegativePath_ThrowsOnInvalidInput(string? input)
+    {
+        // Arrange
+        // TODO: Set up any additional state needed for the error case.
+
+        // Act / Assert
+        Assert.Throws<ArgumentException>(() =>
+        {
+            // TODO: Replace ArgumentException with the expected exception type
+            // and call the method under test with the invalid input, e.g.:
+            // _subject.Execute(input);
+        });
+    }
+}

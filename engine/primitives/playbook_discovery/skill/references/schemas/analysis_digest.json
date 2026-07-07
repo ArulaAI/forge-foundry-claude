@@ -1,0 +1,791 @@
+{
+  "$defs": {
+    "BMSMapRecord": {
+      "additionalProperties": false,
+      "description": "BMS mapset metadata.\n\n``mapset`` is the BMS mapset name (e.g. ``BANKMSET``). ``maps`` is\nthe list of map names defined inside the mapset. ``terminal_screens``\nis the curated list of screen labels Phase B extracts from the\nmapset for \u00a77 (Screen Navigation & UI Layer) rendering. ``fields``\nis the flat list of named fields across all maps \u2014 uniqueness is\nnot enforced here because the same field name can legitimately\nappear on multiple maps.",
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "maps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Maps",
+          "type": "array"
+        },
+        "mapset": {
+          "title": "Mapset",
+          "type": "string"
+        },
+        "terminal_screens": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Terminal Screens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mapset"
+      ],
+      "title": "BMSMapRecord",
+      "type": "object"
+    },
+    "BatchUnit": {
+      "additionalProperties": false,
+      "description": "Abstract batch-unit profile (M-EPIC-3 polyglot vocabulary).\n\nA unit of work that runs without an interactive caller. Mainframe\nprojection: a JCL job is a ``BatchUnit`` with ``kind=\"jcl_job\"``.\nPython projection: a Celery beat schedule is ``kind=\"celery_beat\"``;\na generic cron entry is ``kind=\"cron_task\"``. CI / CD projection:\na scheduled GitHub Actions workflow is ``kind=\"scheduled_workflow\"``.\n\n``steps`` is the ordered list of ``(unit_name, args_summary)`` tuples\n\u2014 names the ``ExecutionUnit`` invoked at each step plus a short\nhuman-readable summary of the arguments (DD-statement summary for\nJCL; cron expression for cron_task; etc.). ``files_read`` /\n``files_written`` carry forward as flat path lists; consumers\ncross-check these against ``DataStore.name`` for the polyglot\nrewrite of ``JCLJobRecord``'s VSAM-file cross-reference pass.",
+      "properties": {
+        "files_read": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Read",
+          "type": "array"
+        },
+        "files_written": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Written",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "jcl_job",
+            "cron_task",
+            "celery_beat",
+            "scheduled_workflow"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source_path": {
+          "default": "",
+          "title": "Source Path",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "BatchUnit",
+      "type": "object"
+    },
+    "CICSTransaction": {
+      "additionalProperties": false,
+      "description": "CICS transaction extracted from the CSD or the source tree.\n\n``transid`` is the 4-character CICS transaction identifier (e.g.\n``BANK``, ``ACCT``). ``target_program`` is the program name CSD maps\nthe TRANSID to. ``bms_maps`` is the list of BMS mapset / map names\nthe transaction's program references via ``EXEC CICS SEND MAP``.\n``security_requirements`` is a free-form list of security / auth\nclasses (``RACF``, ``transaction_security``, \u2026) \u2014 Phase B leaves\nthis open-ended to avoid pinning a Literal that the consumer site\ncannot extend.",
+      "properties": {
+        "bms_maps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bms Maps",
+          "type": "array"
+        },
+        "security_requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Security Requirements",
+          "type": "array"
+        },
+        "target_program": {
+          "title": "Target Program",
+          "type": "string"
+        },
+        "transid": {
+          "title": "Transid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transid",
+        "target_program"
+      ],
+      "title": "CICSTransaction",
+      "type": "object"
+    },
+    "CopybookRecord": {
+      "additionalProperties": false,
+      "description": "Copybook metadata extracted by Phase B.\n\n``fields`` is the ordered list of 01/05-level field names declared in\nthe copybook. ``record_layout`` preserves the raw copybook body so the\nPhase C renderers + M6 entity templating can reproduce field-by-field\nreferences without re-parsing. ``used_by_programs`` is the back-pointer\n(program names that ``COPY`` this copybook) \u2014 the forward edge lives on\n``ProgramRecord.copybook_deps``.",
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "record_layout": {
+          "default": "",
+          "title": "Record Layout",
+          "type": "string"
+        },
+        "used_by_programs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Used By Programs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CopybookRecord",
+      "type": "object"
+    },
+    "DataStore": {
+      "additionalProperties": false,
+      "description": "Abstract data-store profile (M-EPIC-3 polyglot vocabulary).\n\nA persistent or quasi-persistent place data lives. Mainframe\nprojection: a VSAM file is a ``DataStore`` with ``kind=\"vsam_file\"``.\nPython projection: a SQLAlchemy table maps to ``kind=\"db_table\"``;\na Redis key prefix to ``kind=\"cache\"``; an SQS queue to\n``kind=\"queue\"``; an S3 prefix to ``kind=\"object_store\"``.\n\n``accessed_by`` is the access-mode matrix keyed by ``ExecutionUnit``\nname; values are *sets* of closed ``AccessMode`` Literal values\n(``read`` / ``write`` / ``rewrite`` / ``delete``). The set semantics\n(de-dup, order-insensitive) is the polyglot improvement over\n``VSAMFileRecord.accessed_by`` which used open-form ``list[str]``\nbecause the as-shipped CICS dialect coverage varied across vendors.",
+      "properties": {
+        "accessed_by": {
+          "additionalProperties": {
+            "items": {
+              "enum": [
+                "read",
+                "write",
+                "rewrite",
+                "delete"
+              ],
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "title": "Accessed By",
+          "type": "object"
+        },
+        "kind": {
+          "enum": [
+            "vsam_file",
+            "db_table",
+            "cache",
+            "queue",
+            "object_store"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "DataStore",
+      "type": "object"
+    },
+    "DeploymentUnit": {
+      "additionalProperties": false,
+      "description": "A deployment-topology object discovered in an infrastructure manifest.\n\nPolyglot deployment vocabulary (#949): a Kubernetes ``Deployment`` /\n``StatefulSet`` / ``Service`` / \u2026 manifest is one ``DeploymentUnit`` carrying\nits ``metadata.name``, lowercase ``kind``, and the repo-relative\n``source_path`` (with the ``kind:`` line) so \u00a711 Deployment Architecture can\nrender the real topology instead of an ``\u26a0\ufe0f UNVERIFIED`` stub. ``replicas``\nand ``image`` are best-effort and optional (omitted when not cheaply\nextractable). Populated by a dedicated manifest scan, not the per-stack\nflavor's six-category ``parse()`` contract.",
+      "properties": {
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "kind": {
+          "enum": [
+            "deployment",
+            "statefulset",
+            "daemonset",
+            "replicaset",
+            "job",
+            "service",
+            "ingress",
+            "pod"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "replicas": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replicas"
+        },
+        "source_path": {
+          "default": "",
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "DeploymentUnit",
+      "type": "object"
+    },
+    "EntryPoint": {
+      "additionalProperties": false,
+      "description": "Abstract entry-point profile (M-EPIC-3 polyglot vocabulary).\n\nThe thing an outside actor invokes. Mainframe projection: a CICS\ntransaction is an ``EntryPoint`` with ``kind=\"cics_transaction\"``\ntargeting a COBOL program. Python projection: a ``@app.get`` route\nis ``kind=\"api_route\"`` targeting the handler ``ExecutionUnit``.\nNode projection: an Express route is ``kind=\"web_route\"``.\n\n``target_unit`` names the ``ExecutionUnit`` the entry point dispatches\ninto (the polyglot rename of ``CICSTransaction.target_program``).\n``security_requirements`` and ``ui_elements`` carry forward\nopen-ended so consumers can extend without a Literal edit per\nflavour.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "cics_transaction",
+            "api_route",
+            "cli_command",
+            "scheduled_trigger",
+            "web_route"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "security_requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Security Requirements",
+          "type": "array"
+        },
+        "target_unit": {
+          "default": "",
+          "title": "Target Unit",
+          "type": "string"
+        },
+        "ui_elements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ui Elements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "EntryPoint",
+      "type": "object"
+    },
+    "ExecutionUnit": {
+      "additionalProperties": false,
+      "description": "Abstract execution-unit profile (M-EPIC-3 polyglot vocabulary).\n\nMainframe-flavour projection of the abstract surface: a COBOL\nprogram is one ``ExecutionUnit`` with ``kind=\"program\"`` and\n``language=\"cobol\"``. Python projection: a module is one\n``ExecutionUnit`` with ``kind=\"module\"``. Java projection: a class\nis one ``ExecutionUnit`` with ``kind=\"class\"``.\n\n``shared_component_deps`` is the polyglot analogue of\n``ProgramRecord.copybook_deps`` \u2014 names of ``SharedComponent``\nrecords this unit imports / copies. ``called_by`` / ``calls_to``\nare call-chain edges in the per-flavour vocabulary (CICS LINK /\nPython import / Java method invocation / Node require).\n\n``loc`` is the file's source line count \u2014 the polyglot rename of\nthe mainframe-flavoured ``line_count`` field on ``ProgramRecord``.\n``complexity`` is best-effort (cyclomatic-equivalent or stub) and\noptional so flavour packs that ship without a complexity heuristic\ncan omit it.",
+      "properties": {
+        "called_by": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Called By",
+          "type": "array"
+        },
+        "calls_to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Calls To",
+          "type": "array"
+        },
+        "complexity": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Complexity"
+        },
+        "kind": {
+          "enum": [
+            "program",
+            "module",
+            "function",
+            "class",
+            "route_handler",
+            "lambda",
+            "rpg_program",
+            "powerbuilder_userobject"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "cobol",
+            "copybook",
+            "pli",
+            "jcl",
+            "bms",
+            "asm",
+            "sql",
+            "python",
+            "other"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "loc": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Loc",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "shared_component_deps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Shared Component Deps",
+          "type": "array"
+        },
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source_path",
+        "language",
+        "kind"
+      ],
+      "title": "ExecutionUnit",
+      "type": "object"
+    },
+    "JCLJobRecord": {
+      "additionalProperties": false,
+      "description": "JCL batch job metadata.\n\n``steps`` is the ordered list of step names in the job. The flat\n``programs_invoked`` list collapses every ``EXEC PGM=`` reference\nacross steps so \u00a79 (Batch Processing) can summarise quickly;\n``files_read`` / ``files_written`` carry the DD-statement file\naccesses, used by the VSAM cross-reference + the Phase D\nentity-mismatch auditor.",
+      "properties": {
+        "files_read": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Read",
+          "type": "array"
+        },
+        "files_written": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Written",
+          "type": "array"
+        },
+        "job_name": {
+          "title": "Job Name",
+          "type": "string"
+        },
+        "programs_invoked": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Programs Invoked",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "job_name"
+      ],
+      "title": "JCLJobRecord",
+      "type": "object"
+    },
+    "ProgramRecord": {
+      "additionalProperties": false,
+      "description": "A single mainframe program profile (Phase B output).\n\nCarries enough context for \u00a73 (Program Inventory), \u00a75 (Call Chain\nMaps), \u00a710 (Security Architecture), and the optional C8 sub-call to\noperate without re-parsing source. ``language`` is one of the\n``SourceLanguage`` literals (``cobol`` / ``pli`` / ``asm`` are the\ncommon mainframe-program values, but the field is typed as the\nsuperset so Phase A's LoC counter can record any source file the\ntree happens to contain).\n\n``copybook_deps`` lists ``COPY`` targets declared in source.\n``cics_transactions`` is the inverse of ``CICSTransaction.\ntarget_program`` (TRANSIDs that route to this program).\n``called_by`` / ``calls_to`` are the per-program call-chain edges\nStage B extracts from ``EXEC CICS LINK`` / ``EXEC CICS XCTL`` /\n``CALL`` statements. ``complexity`` is a best-effort metric (e.g.\ncyclomatic from a heuristic walk) \u2014 left optional so non-CICS\nflavors (M5 v1.5+) can omit it when the parser is a stub.",
+      "properties": {
+        "called_by": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Called By",
+          "type": "array"
+        },
+        "calls_to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Calls To",
+          "type": "array"
+        },
+        "cics_transactions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cics Transactions",
+          "type": "array"
+        },
+        "complexity": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Complexity"
+        },
+        "copybook_deps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Copybook Deps",
+          "type": "array"
+        },
+        "language": {
+          "enum": [
+            "cobol",
+            "copybook",
+            "pli",
+            "jcl",
+            "bms",
+            "asm",
+            "sql",
+            "python",
+            "other"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "line_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Line Count",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "language",
+        "source_path"
+      ],
+      "title": "ProgramRecord",
+      "type": "object"
+    },
+    "SharedComponent": {
+      "additionalProperties": false,
+      "description": "Abstract shared-component profile (M-EPIC-3 polyglot vocabulary).\n\nMainframe projection: a copybook is a ``SharedComponent`` with\n``kind=\"copybook\"``. Python projection: a shared utility module\nimported by \u22652 callers becomes ``kind=\"module\"``. Java projection:\na common-JAR package becomes ``kind=\"package\"`` or ``kind=\"library\"``.\n\n``field_definitions`` is the mainframe-flavoured carryover (ordered\nlist of 01/05-level field names from a copybook) \u2014 optional so\nnon-mainframe flavours that have no field-definition concept can\nomit it without polluting the schema. ``used_by_units`` is the\nback-pointer (polyglot rename of ``CopybookRecord.used_by_programs``).",
+      "properties": {
+        "field_definitions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Definitions",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "copybook",
+            "module",
+            "package",
+            "library"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source_path": {
+          "default": "",
+          "title": "Source Path",
+          "type": "string"
+        },
+        "used_by_units": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Used By Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "SharedComponent",
+      "type": "object"
+    },
+    "UIElement": {
+      "additionalProperties": false,
+      "description": "Abstract UI-element profile (M-EPIC-3 polyglot vocabulary).\n\nMainframe projection: a BMS map is a ``UIElement`` with\n``kind=\"bms_map\"``. Python projection: a Jinja2 template is\n``kind=\"web_template\"``. JavaScript projection: a React component\nfile is ``kind=\"react_component\"``. Mobile projection: an\niOS/Android screen is ``kind=\"mobile_screen\"``.\n\n``referenced_by_units`` names the ``ExecutionUnit`` records that\nrender or transition to this UI element. ``fields`` is the\nmainframe-flavoured carryover (flat list of named fields across\nthe map) \u2014 optional so web-template / React flavours that have no\nflat-fields concept can omit it.",
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "bms_map",
+            "web_template",
+            "react_component",
+            "mobile_screen"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "referenced_by_units": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Referenced By Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "UIElement",
+      "type": "object"
+    },
+    "VSAMFileRecord": {
+      "additionalProperties": false,
+      "description": "VSAM file metadata + access-mode matrix.\n\n``record_layout`` carries the copybook name (or inline layout\ndescription) the application uses against this VSAM file.\n``accessed_by`` is the access-mode matrix: keyed by program name,\nvalues are the set of CICS access modes (``READ`` / ``WRITE`` /\n``REWRITE`` / ``DELETE`` / ``BROWSE``) that program performs. The\nmatrix is left open-form (``list[str]``) because dialect coverage\ndiffers across IBM CICS / Micro Focus / Tmaxsoft.",
+      "properties": {
+        "accessed_by": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Accessed By",
+          "type": "object"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "record_layout": {
+          "default": "",
+          "title": "Record Layout",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "VSAMFileRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Phase B aggregated output (``{--state-dir}/analysis.json``).\n\nThe six per-entity lists (``programs`` / ``copybooks`` /\n``cics_transactions`` / ``vsam_files`` / ``bms_maps`` /\n``jcl_jobs``) are the closed universe Phase C renderers consult and\nPhase D auditors verify against. Adding a new entity type requires a\nschema bump (this is the \"schema-versioned so downstream primitives\ncan refuse to consume a mismatched output\" rule from the design\nspec).\n\n``security_findings`` carries the security-surface scan output from\nStage B's coupling-metrics pass \u2014 open-shaped so the renderer can\npull from heterogeneous detectors (RACF references, hard-coded\ncredentials, dynamic ``EXEC CICS`` paths) without forcing a Literal\nedit per detector. Substantive cross-referencing happens through the\nstructured per-entity lists; ``security_findings`` is for narrative\nrendering only.\n\nGemini subset (issue #548 / SPEC \u00a76.3 + \u00a77.2): persisted M5 Phase-B\nartefact, not an LLM ``response_format`` schema. The per-entity\n``$ref`` chains (Program/Copybook/CICSTransaction/\u2026/ExecutionUnit/\nSharedComponent) and several ``additionalProperties: <schema>``\ndictionaries (DataStore.accessed_by, VSAMFileRecord.accessed_by)\nexceed Gemini's accepted subset. Decorated with\n``@accepts_extended_schema`` because Phase B writes ``analysis.json``\ndeterministically to disk for Phase C / M6 consumption.",
+  "properties": {
+    "batch_units": {
+      "items": {
+        "$ref": "#/$defs/BatchUnit"
+      },
+      "title": "Batch Units",
+      "type": "array"
+    },
+    "bms_maps": {
+      "items": {
+        "$ref": "#/$defs/BMSMapRecord"
+      },
+      "title": "Bms Maps",
+      "type": "array"
+    },
+    "cics_transactions": {
+      "items": {
+        "$ref": "#/$defs/CICSTransaction"
+      },
+      "title": "Cics Transactions",
+      "type": "array"
+    },
+    "code_root": {
+      "title": "Code Root",
+      "type": "string"
+    },
+    "copybooks": {
+      "items": {
+        "$ref": "#/$defs/CopybookRecord"
+      },
+      "title": "Copybooks",
+      "type": "array"
+    },
+    "data_stores": {
+      "items": {
+        "$ref": "#/$defs/DataStore"
+      },
+      "title": "Data Stores",
+      "type": "array"
+    },
+    "deployment_units": {
+      "items": {
+        "$ref": "#/$defs/DeploymentUnit"
+      },
+      "title": "Deployment Units",
+      "type": "array"
+    },
+    "entry_points": {
+      "items": {
+        "$ref": "#/$defs/EntryPoint"
+      },
+      "title": "Entry Points",
+      "type": "array"
+    },
+    "execution_units": {
+      "items": {
+        "$ref": "#/$defs/ExecutionUnit"
+      },
+      "title": "Execution Units",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "jcl_jobs": {
+      "items": {
+        "$ref": "#/$defs/JCLJobRecord"
+      },
+      "title": "Jcl Jobs",
+      "type": "array"
+    },
+    "mainframe_flavor": {
+      "enum": [
+        "cics_cobol",
+        "jcl_batch",
+        "ims_db",
+        "python",
+        "java_ee",
+        "powerbuilder",
+        "delphi",
+        "vb6",
+        "oracle_forms",
+        "as400_rpg"
+      ],
+      "title": "Mainframe Flavor",
+      "type": "string"
+    },
+    "programs": {
+      "items": {
+        "$ref": "#/$defs/ProgramRecord"
+      },
+      "title": "Programs",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "security_findings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Security Findings",
+      "type": "array"
+    },
+    "shared_components": {
+      "items": {
+        "$ref": "#/$defs/SharedComponent"
+      },
+      "title": "Shared Components",
+      "type": "array"
+    },
+    "ui_elements": {
+      "items": {
+        "$ref": "#/$defs/UIElement"
+      },
+      "title": "Ui Elements",
+      "type": "array"
+    },
+    "vsam_files": {
+      "items": {
+        "$ref": "#/$defs/VSAMFileRecord"
+      },
+      "title": "Vsam Files",
+      "type": "array"
+    }
+  },
+  "required": [
+    "code_root",
+    "mainframe_flavor"
+  ],
+  "title": "AnalysisDigest",
+  "type": "object"
+}

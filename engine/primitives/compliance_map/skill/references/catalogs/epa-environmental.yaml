@@ -1,0 +1,196 @@
+# EPA Environmental Reporting Starter Catalog — forge-foundry compliance-map (S70)
+# Source: U.S. EPA regulations under the Clean Water Act (CWA) and related
+# programs as codified in 40 CFR. Targets software/data systems that produce or
+# manage regulated environmental reporting (e.g. NPDES Discharge Monitoring
+# Reports, drinking-water compliance, emissions, spill response, recordkeeping).
+#
+# This is a reusable, framework-level catalog (NOT specific to any one operator):
+# it covers the core obligations that any regulated facility's reporting system
+# must satisfy. ~14 controls across Discharge Monitoring, Drinking Water,
+# Reporting & Submission, Records & Retention, and Air/Emissions families.
+framework: epa-environmental
+version: "cfr40"
+released: "2024-01-01"
+controls:
+  # ---------------------------------------------------------------------------
+  # Discharge Monitoring (NPDES / Clean Water Act)
+  # ---------------------------------------------------------------------------
+  - id: "CWA-DMR-1"
+    title: "Discharge Monitoring Report (DMR) generation and submission"
+    family: "discharge-monitoring"
+    severity: high
+    evidence_hints:
+      - "Discharge Monitoring Reports generated from sampled effluent data per NPDES permit"
+      - "DMR data submitted electronically via NetDMR / EPA CDX on the permit schedule"
+    code_signatures:
+      - 'DMR|discharge.monitoring|NetDMR|NPDES|effluent.report|permit.report'
+    cwe_ids: []
+    # Source: Clean Water Act §402; 40 CFR 122.41(l)(4), 40 CFR Part 127 (NeT/NetDMR)
+
+  - id: "CWA-LIMIT-2"
+    title: "Effluent limitation monitoring against permit parameters"
+    family: "discharge-monitoring"
+    severity: high
+    evidence_hints:
+      - "monitored parameters (BOD, TSS, pH, nutrients, metals) compared to permit limits"
+      - "exceedances flagged and tracked against effluent limitation guidelines"
+    code_signatures:
+      - 'effluent.limit|permit.limit|BOD|TSS|turbidity|exceedance|parameter.threshold|water.quality'
+    cwe_ids: []
+    # Source: 40 CFR 122.44; 40 CFR Part 133 (secondary treatment)
+
+  - id: "CWA-SAMPLE-3"
+    title: "Sampling frequency and analytical method compliance"
+    family: "discharge-monitoring"
+    severity: medium
+    evidence_hints:
+      - "sample collection occurs at the frequency required by the permit"
+      - "approved analytical methods (40 CFR Part 136) recorded with each sample"
+    code_signatures:
+      - 'sampling.frequency|grab.sample|composite.sample|sample.schedule|analytical.method|chain.of.custody'
+    cwe_ids: []
+    # Source: 40 CFR 122.48; 40 CFR Part 136 (test procedures)
+
+  - id: "CWA-BYPASS-4"
+    title: "Bypass, upset, and noncompliance event reporting"
+    family: "discharge-monitoring"
+    severity: high
+    evidence_hints:
+      - "24-hour reporting of permit noncompliance that may endanger health or environment"
+      - "bypass / upset / sanitary sewer overflow events logged and reported to the permitting authority"
+    code_signatures:
+      - 'bypass|upset.event|noncompliance.report|sanitary.sewer.overflow|SSO.report|24.hour.report|spill.report'
+    cwe_ids: []
+    # Source: 40 CFR 122.41(l)(6)-(7); 40 CFR 122.41(m)-(n)
+
+  # ---------------------------------------------------------------------------
+  # Drinking Water (Safe Drinking Water Act)
+  # ---------------------------------------------------------------------------
+  - id: "SDWA-MCL-1"
+    title: "Maximum Contaminant Level (MCL) monitoring and reporting"
+    family: "drinking-water"
+    severity: high
+    evidence_hints:
+      - "contaminant concentrations monitored against National Primary Drinking Water Regulations MCLs"
+      - "MCL violations reported to the primacy agency within required timeframes"
+    code_signatures:
+      - 'MCL|maximum.contaminant|drinking.water|primary.drinking.water|contaminant.level|treatment.technique'
+    cwe_ids: []
+    # Source: SDWA §1412; 40 CFR Part 141
+
+  - id: "SDWA-CCR-2"
+    title: "Consumer Confidence Report (CCR) production and delivery"
+    family: "drinking-water"
+    severity: medium
+    evidence_hints:
+      - "annual Consumer Confidence Report compiled from monitoring data and delivered to customers"
+      - "detected contaminants, sources, and health information disclosed per CCR rule"
+    code_signatures:
+      - 'consumer.confidence.report|CCR|annual.water.report|water.quality.report'
+    cwe_ids: []
+    # Source: 40 CFR Part 141 Subpart O
+
+  - id: "SDWA-PN-3"
+    title: "Public notification of drinking water violations"
+    family: "drinking-water"
+    severity: high
+    evidence_hints:
+      - "tiered public notification issued for acute (Tier 1) and other violations"
+      - "notification timing and content meet the public notification rule"
+    code_signatures:
+      - 'public.notification|boil.water|tier.1.notice|tier.2.notice|violation.notice|public.notice'
+    cwe_ids: []
+    # Source: 40 CFR Part 141 Subpart Q
+
+  # ---------------------------------------------------------------------------
+  # Reporting and Electronic Submission (Cross-program / CROMERR)
+  # ---------------------------------------------------------------------------
+  - id: "RPT-EDR-1"
+    title: "Electronic reporting and CROMERR-compliant submission"
+    family: "reporting-submission"
+    severity: high
+    evidence_hints:
+      - "regulatory submissions transmitted electronically via EPA CDX / state e-reporting portal"
+      - "electronic signatures and copy-of-record satisfy CROMERR (40 CFR Part 3)"
+    code_signatures:
+      - 'CDX|CROMERR|electronic.report|e.reporting|copy.of.record|electronic.signature|EPA.submission'
+    cwe_ids: ["CWE-345"]
+    # Source: 40 CFR Part 3 (CROMERR); 40 CFR Part 127
+
+  - id: "RPT-CERT-2"
+    title: "Responsible-official certification of report accuracy"
+    family: "reporting-submission"
+    severity: high
+    evidence_hints:
+      - "reports certified by a duly authorized responsible official prior to submission"
+      - "certification statement attesting to accuracy and completeness captured"
+    code_signatures:
+      - 'responsible.official|certification.statement|certify.accuracy|signatory|report.certif'
+    cwe_ids: []
+    # Source: 40 CFR 122.22; 40 CFR 122.41(k)
+
+  - id: "RPT-DEADLINE-3"
+    title: "Reporting deadline scheduling and submission tracking"
+    family: "reporting-submission"
+    severity: medium
+    evidence_hints:
+      - "reporting calendar enforces monthly/quarterly/annual submission deadlines"
+      - "late or missed submissions flagged and escalated"
+    code_signatures:
+      - 'reporting.deadline|submission.schedule|due.date|reporting.calendar|late.report|filing.deadline'
+    cwe_ids: []
+    # Source: 40 CFR 122.41(l) (reporting requirements)
+
+  # ---------------------------------------------------------------------------
+  # Records and Retention
+  # ---------------------------------------------------------------------------
+  - id: "REC-RETAIN-1"
+    title: "Monitoring records retention for the required period"
+    family: "records-retention"
+    severity: high
+    evidence_hints:
+      - "monitoring records, calibration, and original data retained for at least 3 years (5+ if extended)"
+      - "retention period configurable and enforced; records not purged prematurely"
+    code_signatures:
+      - 'record.retention|retention.period|retain.records|data.retention|archive.policy|three.year'
+    cwe_ids: ["CWE-778"]
+    # Source: 40 CFR 122.41(j)(2) (3-year record retention)
+
+  - id: "REC-INTEGRITY-2"
+    title: "Integrity and tamper-evidence of monitoring records"
+    family: "records-retention"
+    severity: high
+    evidence_hints:
+      - "monitoring data stored in append-only / immutable form with audit trail"
+      - "edits to recorded results are versioned and attributable"
+    code_signatures:
+      - 'append.only|immutable.record|audit.trail|tamper.evident|record.integrity|write.once|data.lineage'
+    cwe_ids: ["CWE-345"]
+    # Source: 40 CFR 122.41(j); 40 CFR Part 3 (copy of record integrity)
+
+  # ---------------------------------------------------------------------------
+  # Air and Emissions (Clean Air Act)
+  # ---------------------------------------------------------------------------
+  - id: "CAA-EMIS-1"
+    title: "Emissions monitoring and Title V reporting"
+    family: "air-emissions"
+    severity: medium
+    evidence_hints:
+      - "continuous emissions monitoring (CEMS) data captured and validated"
+      - "Title V semiannual monitoring and annual compliance certification reports produced"
+    code_signatures:
+      - 'CEMS|emission.monitoring|title.v|air.emission|stack.test|compliance.certification|GHG.report'
+    cwe_ids: []
+    # Source: Clean Air Act §503; 40 CFR Part 70; 40 CFR Part 75
+
+  - id: "CAA-GHGRP-2"
+    title: "Greenhouse Gas Reporting Program (GHGRP) annual emissions report"
+    family: "air-emissions"
+    severity: medium
+    evidence_hints:
+      - "annual GHG emissions calculated and reported via EPA e-GGRT for covered sources"
+      - "emission factors and methodologies documented per 40 CFR Part 98"
+    code_signatures:
+      - 'GHGRP|e.GGRT|greenhouse.gas|GHG.emission|carbon.report|emission.factor|part.98'
+    cwe_ids: []
+    # Source: 40 CFR Part 98 (Mandatory GHG Reporting)

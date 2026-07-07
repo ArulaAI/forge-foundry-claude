@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "EffortEstimate": {
+      "additionalProperties": false,
+      "description": "T-shirt-size effort estimate for a single SP conversion.\n\n``size`` is the Stage E roll-up; ``factors`` is the per-axis weighting\nthat produced it (e.g. ``{\"cyclomatic\": 0.4, \"side_effects\": 0.2,\n\"table_touch_count\": 0.3, \"cross_db_link\": 0.1}``). Keeping ``factors``\nfree-form (``dict[str, float]``) lets the calibration in\n``docs/m4-effort-calibration.md`` (M4-11) evolve without re-shaping the\npersisted record.",
+      "properties": {
+        "factors": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Factors",
+          "type": "object"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "size": {
+          "enum": [
+            "S",
+            "M",
+            "L",
+            "XL"
+          ],
+          "title": "Size",
+          "type": "string"
+        }
+      },
+      "required": [
+        "size",
+        "rationale"
+      ],
+      "title": "EffortEstimate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level migration plan produced by the M4 pipeline.\n\nSchema-versioned so downstream primitives can refuse to consume a\nmismatched output (design spec \u00a7\"File contract\" rule). ``target`` is\nthe built-in target Literal; the CLI also accepts entry-point-\nregistered third-party targets at the registry layer, but those are\nnot part of the persisted ``Target`` Literal \u2014 third-party plugins\npersist their selection as a free-form ``target_name`` extension\nfield on the renderer side rather than mutating this enum.\n\nThe fields after ``target`` are the per-stage outputs the Stage B\nplan synthesizer (`shared/plan_synthesizer.py`, M4-7) fills in:\n\n- ``data_deps`` \u2014 list of M1 ``Table.name`` strings the SP touches,\n  validated against the M1 ``SchemaDigest`` at orchestrator time\n  (anti-hallucination guard, SPEC \u00a7\"Anti-hallucination\").\n- ``txn_boundaries`` \u2014 natural-language descriptions of where the\n  original SP's ``COMMIT`` / ``ROLLBACK`` should map to the target\n  framework's transactional boundary (e.g. Spring ``@Transactional``,\n  FastAPI dependency).\n- ``side_effect_mappings`` \u2014 keyed by M2 ``SideEffect`` literal\n  (``email`` / ``file`` / ``external`` / ``dynamic_sql``), valued by\n  the target-framework's API choice (e.g. ``email`` \u2192\n  ``JavaMailSender``).\n- ``test_plan`` \u2014 per-stage test cases the engineer should add to\n  the generated scaffold.\n- ``gotchas`` \u2014 known migration risks (cursor \u2192 stream translation,\n  cross-DB link replacement, vendor pragma loss).\n- ``commit_sequence`` \u2014 suggested commit sequence for the human\n  engineer, referenced by ``StoredProc.name`` from the M2 digest\n  (anti-hallucination guard).\n\nGemini subset (issue #548 / SPEC \u00a76.3 + \u00a77.2): persisted M4 artefact,\nnot an LLM ``response_format`` schema. Pydantic emits ``$ref`` for\nthe nested ``EffortEstimate`` and ``additionalProperties: <schema>``\nfor the ``side_effect_mappings`` / ``EffortEstimate.factors`` dict\nfields \u2014 both exceed Gemini's accepted subset. Decorated with\n``@accepts_extended_schema`` because the plan is written to disk for\ndownstream consumption (commit-sequence runner, scaffold generator),\nnot sent through harness structured-output mode.",
+  "properties": {
+    "commit_sequence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Commit Sequence",
+      "type": "array"
+    },
+    "data_deps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Data Deps",
+      "type": "array"
+    },
+    "effort": {
+      "$ref": "#/$defs/EffortEstimate"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "gotchas": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Gotchas",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "side_effect_mappings": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Side Effect Mappings",
+      "type": "object"
+    },
+    "sp_name": {
+      "title": "Sp Name",
+      "type": "string"
+    },
+    "target": {
+      "enum": [
+        "spring-batch",
+        "fastapi",
+        "celery",
+        "spring-boot",
+        "plan-only"
+      ],
+      "title": "Target",
+      "type": "string"
+    },
+    "test_plan": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Test Plan",
+      "type": "array"
+    },
+    "txn_boundaries": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Txn Boundaries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "sp_name",
+    "target",
+    "effort"
+  ],
+  "title": "ConversionPlan",
+  "type": "object"
+}
