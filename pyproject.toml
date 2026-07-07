@@ -1,0 +1,8 @@
+[project]
+name = "forge-foundry-claude-tooling"
+version = "0.1.0"
+description = "Vendor tooling + parity tests for the forge-foundry-claude plugin"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
