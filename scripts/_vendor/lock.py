@@ -55,3 +55,36 @@ def write_lock(engine_dir: Path, info: SourceInfo, *, primitive_count: int,
 
 def read_lock(engine_dir: Path) -> dict:
     return json.loads((Path(engine_dir) / "VENDOR_LOCK.json").read_text())
+
+
+_HISTORY_HEADING = "## Vendor history"
+
+
+def append_vendor_history(changelog: Path, lock: dict) -> str:
+    """Append one history line to CHANGELOG-VENDOR.md from a VENDOR_LOCK dict.
+
+    Format: ``- <vendored_at> <ref>@<sha[:12]> — <primitive_count> primitives``.
+
+    The history log naturally grows: a new line is appended on every run. If the
+    ``## Vendor history`` section is missing, it is created (with the placeholder
+    comment) so the file stays well-formed. Returns the line that was appended.
+    """
+    changelog = Path(changelog)
+    line = (
+        f"- {lock['vendored_at']} {lock['ref']}@{lock['sha'][:12]} "
+        f"— {lock['primitive_count']} primitives"
+    )
+    text = changelog.read_text() if changelog.exists() else ""
+    if _HISTORY_HEADING not in text:
+        prefix = text if text.endswith("\n") or text == "" else text + "\n"
+        text = (
+            prefix
+            + f"\n{_HISTORY_HEADING}\n\n"
+            + "<!-- vendor.py appends one line per re-vendor: "
+            + "<date> <ref>@<sha12> — <primitive_count> primitives -->\n"
+        )
+    if not text.endswith("\n"):
+        text += "\n"
+    text += line + "\n"
+    changelog.write_text(text)
+    return line

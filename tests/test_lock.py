@@ -2,7 +2,12 @@
 import subprocess
 from pathlib import Path
 import pytest
-from scripts._vendor.lock import resolve_source, write_lock, read_lock
+from scripts._vendor.lock import (
+    append_vendor_history,
+    read_lock,
+    resolve_source,
+    write_lock,
+)
 
 
 def _git(*args, cwd):
@@ -44,3 +49,33 @@ def test_write_and_read_lock(tmp_path):
     d = write_lock(eng, info, primitive_count=31, version="0.1.0")
     assert d["primitive_count"] == 31 and d["version"] == "0.1.0"
     assert read_lock(eng)["sha"] == info.sha
+
+
+def test_append_vendor_history_writes_line(tmp_path):
+    cl = tmp_path / "CHANGELOG-VENDOR.md"
+    cl.write_text("# Changelog\n\n## Vendor history\n\n<!-- placeholder -->\n")
+    lock = {
+        "vendored_at": "2026-07-07T12:22:05Z",
+        "ref": "v5.0.2",
+        "sha": "0f5f563588b21e0f5aef7e5a277d60a1e8f8b583",
+        "primitive_count": 31,
+    }
+    line = append_vendor_history(cl, lock)
+    assert line == "- 2026-07-07T12:22:05Z v5.0.2@0f5f563588b2 — 31 primitives"
+    assert line + "\n" in cl.read_text()
+
+
+def test_append_vendor_history_creates_section_when_missing(tmp_path):
+    cl = tmp_path / "CHANGELOG-VENDOR.md"
+    cl.write_text("# Changelog\n\nSome prose, no history section.\n")
+    lock = {
+        "vendored_at": "2026-07-07T00:00:00Z",
+        "ref": "v6.0.0",
+        "sha": "abcdef012345aaaa",
+        "primitive_count": 30,
+    }
+    line = append_vendor_history(cl, lock)
+    text = cl.read_text()
+    assert "## Vendor history" in text
+    assert line == "- 2026-07-07T00:00:00Z v6.0.0@abcdef012345 — 30 primitives"
+    assert line + "\n" in text

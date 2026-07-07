@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts._vendor.copy_engine import copy_engine
 from scripts._vendor.copy_skills import copy_agents, copy_skills, discover_primitives
-from scripts._vendor.lock import resolve_source, write_lock
+from scripts._vendor.lock import append_vendor_history, resolve_source, write_lock
 from scripts._vendor.rewrite import rewrite_reference_files, rewrite_skills_tree
 
 
@@ -44,8 +44,9 @@ def main(argv: list[str] | None = None) -> int:
     counts = rewrite_skills_tree(repo / "skills")
     ref_counts = rewrite_reference_files(repo / "skills")
 
-    write_lock(repo / "engine", info, primitive_count=n_skills, version=args.version)
+    lock = write_lock(repo / "engine", info, primitive_count=n_skills, version=args.version)
     _patch_version(repo, args.version)
+    append_vendor_history(repo / "CHANGELOG-VENDOR.md", lock)
 
     rewritten = sum(counts.values())
     ref_rewritten = sum(ref_counts.values())
