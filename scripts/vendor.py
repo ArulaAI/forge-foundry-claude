@@ -6,12 +6,19 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Import the _vendor helpers by putting THIS script's own directory (scripts/) on the
+# path and importing `_vendor.*` bare — NOT `scripts._vendor.*`. The plain-`scripts`
+# form is fragile: the source library (forge-foundry-primitives) ships its own
+# `scripts/__init__.py`, so when the vendor is run from a shell with the library on
+# sys.path (e.g. its active venv), `import scripts._vendor` resolves to the LIBRARY's
+# `scripts` package and shadows this one (`ModuleNotFoundError: scripts._vendor`).
+# Importing `_vendor` directly from scripts/ is immune to any other `scripts` on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scripts._vendor.copy_engine import copy_engine
-from scripts._vendor.copy_skills import copy_agents, copy_skills, discover_primitives
-from scripts._vendor.lock import append_vendor_history, resolve_source, write_lock
-from scripts._vendor.rewrite import rewrite_reference_files, rewrite_skills_tree
+from _vendor.copy_engine import copy_engine
+from _vendor.copy_skills import copy_agents, copy_skills, discover_primitives
+from _vendor.lock import append_vendor_history, resolve_source, write_lock
+from _vendor.rewrite import rewrite_reference_files, rewrite_skills_tree
 
 
 def _patch_version(repo: Path, version: str) -> None:
