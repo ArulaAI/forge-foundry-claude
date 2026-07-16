@@ -89,20 +89,21 @@ runtime dependency.
   `.foundry/context/` in **your working project** (the paths are CWD-relative), so
   artifacts are scoped to the repo you invoke them from, not the shared plugin cache.
 
-- **Re-vendoring (maintainers).** To refresh the vendored trees from a new source tag:
+- **Re-vendoring (maintainers).** To refresh the vendored trees from a new source tag,
+  use the `make vendor` target (it provisions the vendor-time deps for you):
 
   ```bash
-  python3 scripts/vendor.py --source <path-to-forge-foundry-primitives> --ref <tag>
+  make vendor SOURCE=<path-to-forge-foundry-primitives> REF=<tag> VERSION=<x.y.z>
   ```
 
 ## How it's built
 
 - Vendored from
   [`forge-foundry-primitives`](https://github.com/arula-ai/forge-foundry-primitives)
-  **@ v5.0.2** (the pinned source ref recorded in
+  **@ v8.5.1** (the pinned source ref recorded in
   [`engine/VENDOR_LOCK.json`](engine/VENDOR_LOCK.json)); deliberate divergences are
   logged in [`CHANGELOG-VENDOR.md`](CHANGELOG-VENDOR.md).
-- **31 primitives** ship as skills, backed by the bundled deterministic Python engine.
+- **38 primitives** ship as skills, backed by the bundled deterministic Python engine.
 - **Parity-tested** — the `tests/` suite verifies the vendored skills, engine, and
   manifests match the source (skill count, PLB rewrites, state-dir preservation on
   `.foundry/context`, version agreement, and a headless PLB smoke run).
@@ -110,12 +111,27 @@ runtime dependency.
 ## Re-vendoring from the source library
 
 The `skills/`, `agents/`, and `engine/` trees are generated, not hand-edited. To
-refresh them from a new tag of the source library:
+refresh them from a new tag of the source library, use the `make vendor` target:
 
 ```bash
-python3 scripts/vendor.py --source /path/to/forge-foundry-primitives \
-  --ref v5.0.2 [--version 0.1.0]
+make vendor SOURCE=/path/to/forge-foundry-primitives REF=v8.5.1 VERSION=0.2.0
 ```
+
+`make vendor` provisions a throwaway environment with the emitter's vendor-time deps
+(`pyyaml pydantic tomli-w jinja2 click defusedxml sqlglot`) and runs
+`scripts/vendor.py` for you — so a re-vendor works from any shell.
+
+> **Why not just `python3 scripts/vendor.py …`?** It works, but only with those deps
+> installed AND from a shell where the plugin's `scripts/` package wins on `sys.path`.
+> The source library ships its own `scripts/__init__.py`, so running from a shell with
+> the library's venv active makes `import scripts._vendor` resolve to the *library's*
+> `scripts` package (`ModuleNotFoundError: scripts._vendor`). `vendor.py` sidesteps
+> this by importing `_vendor.*` from its own directory, and `make vendor` handles the
+> deps — prefer it.
+
+After a re-vendor, run `make test` (the parity + smoke suite) before committing. The
+parity tests derive the expected skill count from `engine/VENDOR_LOCK.json` and the PLB
+set from the vendored tree, so they track the source version automatically.
 
 This locks the source (ref + SHA into `engine/VENDOR_LOCK.json`), copies the skills
 and agents, copies the engine, rewrites PLB invocations to the bundled shim, and

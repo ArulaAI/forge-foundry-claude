@@ -4,7 +4,14 @@ import re
 import shutil
 from pathlib import Path
 
-from scripts._vendor.copy_skills import PrimitiveSrc
+# Import the sibling helper under BOTH entry shapes: `scripts._vendor.*` (how the
+# tests + a package-rooted run import it) and bare `_vendor.*` (how vendor.py imports
+# it after putting scripts/ on the path, immune to a shadowing `scripts` package from
+# the source library — see vendor.py's import note).
+try:
+    from scripts._vendor.copy_skills import PrimitiveSrc
+except ModuleNotFoundError:  # pragma: no cover - exercised when run via vendor.py
+    from _vendor.copy_skills import PrimitiveSrc
 
 _PYPROJECT_TEMPLATE = '''\
 [build-system]

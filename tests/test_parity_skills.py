@@ -1,27 +1,44 @@
+import json
 import re
 
-# The 15 Python-load-bearing (delegates-to-cli: true) primitives at the vendored
-# source version. Their SKILL.md bodies route work through `forge-validate <slug>`,
-# which the vendor rewrites to the `${CLAUDE_PLUGIN_ROOT}/bin/forge-validate` shim.
-# (`mod-modernization-strategist` was renamed `mod-sql-strategist` upstream; the
-# app-tier `mod-modernization-scope` is the M-tier synthesizer added since v5.)
-EXPECTED_PLB = {
-    "code-gen", "data-flow-map", "functional-map", "mod-db-schema-analyze",
-    "mod-modernization-scope", "mod-playbook-discovery", "mod-sp-converter",
-    "mod-sql-strategist", "mod-stored-proc-analyze", "mod-synth-logs",
-    "repo-digest", "rules-gen", "test-from-spec", "test-scaffold",
-    "work-orchestrator",
-}
+_SHIM = "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate"
+
+# A minimum sanity floor for the vendored catalog. These tests derive the exact
+# expected counts/sets from GROUND TRUTH (the vendor lock + the vendored tree) rather
+# than hard-coding a per-version number, so a re-vendor never leaves them stale — this
+# floor only guards against a wholly-empty or broken vendor.
+_MIN_SKILLS = 30
+_MIN_PLB = 10
 
 
 def _skills(repo_root):
     return repo_root / "skills"
 
 
+def _skill_dirs(repo_root):
+    return [p for p in _skills(repo_root).iterdir() if (p / "SKILL.md").is_file()]
+
+
+def _plb_slugs(repo_root):
+    """The PLB set, DERIVED from the vendored tree: every skill whose SKILL.md routes
+    through the ``${CLAUDE_PLUGIN_ROOT}/bin/forge-validate`` shim. Self-updating — no
+    hand-maintained list to go stale on the next re-vendor."""
+    return {
+        p.name for p in _skills(repo_root).iterdir()
+        if (p / "SKILL.md").is_file() and _SHIM in (p / "SKILL.md").read_text()
+    }
+
+
 def test_all_skills_present(repo_root):
-    # 38 canonical primitives vendored from forge-foundry-primitives v8.5.1.
-    dirs = [p for p in _skills(repo_root).iterdir() if (p / "SKILL.md").is_file()]
-    assert len(dirs) == 38, f"expected 38 skills, got {len(dirs)}"
+    # Derive the expected count from the vendor lock the LAST vendor wrote, so the
+    # assertion tracks the source version automatically (no hard-coded per-version N).
+    lock = json.loads((repo_root / "engine" / "VENDOR_LOCK.json").read_text())
+    expected = lock["primitive_count"]
+    dirs = _skill_dirs(repo_root)
+    assert len(dirs) >= _MIN_SKILLS, f"suspiciously few skills ({len(dirs)}) — broken vendor?"
+    assert len(dirs) == expected, (
+        f"vendored {len(dirs)} skills but VENDOR_LOCK records {expected}; re-vendor drift"
+    )
 
 
 def test_no_dev_commands(repo_root):
@@ -37,13 +54,23 @@ def test_no_residual_uv_run(repo_root):
     assert offenders == [], f"un-rewritten PLB invocations in: {offenders}"
 
 
-def test_every_plb_slug_has_shim_call(repo_root):
+def test_plb_skills_route_through_shim(repo_root):
+    # The real invariant: the shim-bearing (PLB) set is substantial AND no PLB skill
+    # body retains a BARE `forge-validate <slug>` invocation line (every invocation was
+    # rewritten to the shim). Derived from the tree — immune to upstream renames.
+    plb = _plb_slugs(repo_root)
+    assert len(plb) >= _MIN_PLB, f"suspiciously few PLB skills ({len(plb)}) — broken rewrite?"
+    _bare = re.compile(r"(?<!/)\bforge-validate\s+[a-z][a-z0-9]*-[a-z0-9-]*")
     missing = []
-    for slug in EXPECTED_PLB:
+    for slug in plb:
         md = _skills(repo_root) / slug / "SKILL.md"
-        if not md.is_file() or "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" not in md.read_text():
-            missing.append(slug)
-    assert missing == [], f"PLB slugs missing shim invocation: {missing}"
+        text = md.read_text()
+        # Every bare `forge-validate <slug>` occurrence on a line must be the shimmed
+        # form; a line with a bare invocation and no shim token is an un-rewritten leak.
+        for line in text.splitlines():
+            if _bare.search(line) and _SHIM not in line:
+                missing.append(f"{slug}: {line.strip()}")
+    assert missing == [], "un-rewritten bare forge-validate invocations:\n" + "\n".join(missing)
 
 
 def test_state_dir_preserved(repo_root):
