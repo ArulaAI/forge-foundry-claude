@@ -36,6 +36,8 @@ deterministically.  Output honors the ``repo_digest`` per-file budget.
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import TYPE_CHECKING
 
@@ -46,6 +48,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from primitives.repo_digest.shared.config import DigestConfig
+
+logger = logging.getLogger(__name__)
+
+# The M1 `mod-db-schema-analyze` digest, when present under the context root. Its
+# `tables[].name` list is the AUTHORITATIVE data-access source — far better than
+# scraping repo source text, which under-captures on JPA/framework apps whose
+# entities + table names live in dependency JARs and picks up prose/keyword noise
+# (#1581). Relative to the project root.
+_SCHEMA_JSON_REL = (".foundry", "context", "db", "schema.json")
 
 # Source extensions worth scanning for DB access.
 _SCAN_EXTENSIONS = {
@@ -158,6 +169,33 @@ def _extract_tables_from_text(text: str, suffix: str) -> set[str]:
     return tables
 
 
+def _tables_from_schema_json(project_root: Path) -> set[str] | None:
+    """The authoritative table set from an M1 ``db/schema.json``, if one exists.
+
+    Returns the lowercased ``tables[].name`` set when
+    ``<project_root>/.foundry/context/db/schema.json`` is present and parseable,
+    else ``None`` (caller falls back to the source-text scrape). A malformed /
+    unreadable file → ``None`` (best-effort; never raise). (#1581)
+    """
+    path = project_root.joinpath(*_SCHEMA_JSON_REL)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("could not read %s as data-access source: %s", path, exc)
+        return None
+    tables = data.get("tables") if isinstance(data, dict) else None
+    if not isinstance(tables, list):
+        return None
+    names = {
+        str(t["name"]).lower()
+        for t in tables
+        if isinstance(t, dict) and isinstance(t.get("name"), str) and t["name"]
+    }
+    return names or None
+
+
 def extract_data_access(
     project_root: Path,
     *,
@@ -180,9 +218,16 @@ def extract_data_access(
         detected, the section renders a ``_No database access detected._``
         placeholder so the heading is always present.
     """
-    tables: set[str] = set()
-    for f in _walk_source_files(project_root, _SCAN_EXTENSIONS, include_vendored=include_vendored):
-        tables |= _extract_tables_from_text(_read_safe(f), f.suffix)
+    # Prefer the authoritative M1 db/schema.json when it exists — its table list is
+    # ground truth. Only scrape repo source text when no schema digest is available
+    # (the text scrape under-captures JPA/dependency-JAR schemas + emits noise, #1581).
+    tables = _tables_from_schema_json(project_root)
+    if tables is None:
+        tables = set()
+        for f in _walk_source_files(
+            project_root, _SCAN_EXTENSIONS, include_vendored=include_vendored
+        ):
+            tables |= _extract_tables_from_text(_read_safe(f), f.suffix)
 
     lines: list[str] = ["## Data Access", ""]
     if tables:

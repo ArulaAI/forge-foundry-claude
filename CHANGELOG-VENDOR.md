@@ -27,3 +27,4 @@ Divergences from `forge-foundry-primitives` (source of truth). Every re-vendor u
 - 2026-07-07T12:22:05Z v5.0.2@0f5f563588b2 — 31 primitives
 - 2026-07-16T02:52:49Z v8.5.1@59daf6457ff4 — 38 primitives
 - 2026-07-16T03:43:42Z v8.5.2@7b7b7717ca12 — 38 primitives
+- 2026-07-16T13:40:56Z v8.5.3@a05b31c32840 — 38 primitives

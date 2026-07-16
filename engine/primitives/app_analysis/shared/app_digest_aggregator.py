@@ -176,15 +176,27 @@ def _extract_debt_items(section_body: str) -> list[str]:
 
 
 def _extract_migration_state(section_body: str) -> str | None:
-    """Extract coexistence signal from §15 modernization analysis body."""
+    """Extract the coexistence signal from the §15 modernization analysis body.
+
+    Returns the CLAUSE around the matched signal — snapped to sentence/clause
+    boundaries (``.``/``;``/``:``, or line start/end) rather than a fixed-width
+    character window, so the excerpt reads as a whole phrase instead of being cut
+    mid-word (#1583).
+    """
     for line in section_body.splitlines():
         m = _MIGRATION_STATE_RE.search(line)
-        if m:
-            # Return the surrounding phrase (bounded at sentence / clause)
-            start = max(0, m.start() - 20)
-            end = min(len(line), m.end() + 40)
-            excerpt = line[start:end].strip().rstrip(".,:;")
-            return excerpt
+        if not m:
+            continue
+        # Expand left to the previous clause boundary, right to the next one.
+        left = max(
+            (line.rfind(delim, 0, m.start()) for delim in ".;:"),
+            default=-1,
+        )
+        start = left + 1  # char after the boundary (or 0 when none found → -1+1)
+        right_candidates = [pos for delim in ".;:" if (pos := line.find(delim, m.end())) != -1]
+        end = min(right_candidates) if right_candidates else len(line)
+        excerpt = line[start:end].strip().rstrip(".,:;")
+        return excerpt
     return None
 
 

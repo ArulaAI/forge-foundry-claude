@@ -69,7 +69,7 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    the `parse_target` snippet above):
 
    ```bash
-   PYTHONPATH=.foundry python3 - "$@" <<'PY'
+   uv tool run --from forge-foundry-primitives python3 - "$@" <<'PY'
    import json, sys
    from pathlib import Path
    from primitives._shared.modernization.repos import build_repo_set
@@ -79,6 +79,10 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
                      for e in repo_set.entries], indent=2))
    PY
    ```
+   > Use `uv tool run --from forge-foundry-primitives python3 …` (not a bare
+   > `PYTHONPATH=.foundry python3 …`) so the interpreter has the primitives' deps
+   > (`pydantic`/`pyyaml`). A bare ambient `python3` (stock macOS) fails with
+   > `ModuleNotFoundError: No module named 'pydantic'`/`'yaml'`.
 
    - **NEITHER a `repos.yaml` NOR any `--repo` → the single-`<repo>` flow below, UNCHANGED**
      (the `build_repo_set` call returns an empty set; every downstream behavior is
@@ -99,7 +103,7 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    a hard error) to the operator:
 
    ```bash
-   PYTHONPATH=.foundry python3 - "$@" <<'PY'
+   uv tool run --from forge-foundry-primitives python3 - "$@" <<'PY'
    import json, sys
    from primitives._shared.modernization.target_stack import parse_target
    ts, warns = parse_target(sys.argv[1:])   # each argv is one KEY=VALUE[@version]
@@ -108,6 +112,8 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    print(json.dumps(ts.model_dump(), indent=2))
    PY
    ```
+   > As above, `uv tool run --from forge-foundry-primitives python3 …` (the interpreter
+   > with `pydantic`/`pyyaml`), not a bare `PYTHONPATH=.foundry python3 …`.
 
    When **≥1 `--target` pair** was supplied, write the serialized `TargetStack` to
    `<context-root>/modernization/.state/<run-id>/target-stack.json` — the exact path the
@@ -423,15 +429,20 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
 
    > **Note — direct module invocation (fallback).** If `forge-validate` is not on
    > `PATH` (e.g. the consumer has not installed the CLI or is running from the synced
-   > `.foundry/primitives/` tree directly), invoke the aggregator as:
+   > `.foundry/primitives/` tree directly), invoke the aggregator with an interpreter
+   > that **has the primitives' deps** (pyyaml, pydantic, …) — use `uv tool run`, which
+   > resolves the installed tool's environment:
    > ```bash
-   > PYTHONPATH=.foundry python3 -m primitives.modernization.shared.rollup_aggregator \
+   > uv tool run --from forge-foundry-primitives \
+   >     python3 -m primitives.modernization.shared.rollup_aggregator \
    >     --state <context-root>/modernization/.state/<run-id>/state.json \
    >     --output <context-root>/MODERNIZATION-SUMMARY.md
    > ```
-   > Note `python3` (not `python`, which is absent on stock macOS) and the
-   > `PYTHONPATH=.foundry` prefix (the synced module lives under `.foundry/primitives/`,
-   > not the repo root).
+   > **Do NOT use a bare `PYTHONPATH=.foundry python3 -m …`** — the ambient `python3`
+   > (stock macOS in particular) lacks `pyyaml`/`pydantic` and the module import fails
+   > with `ModuleNotFoundError: No module named 'yaml'`. If `uv` is unavailable, invoke
+   > the tool venv interpreter directly (it carries the deps), e.g.
+   > `~/.local/share/uv/tools/forge-foundry-primitives/bin/python3 -m …`.
 
    **§SP-A.2 — functional-map runs TWICE (whole-app pass, then sliced pass).** Bounded
    contexts come from the system-map, which is built *inside* the scope stage (stage 5) —

@@ -23,6 +23,7 @@ Design spec §M1 Stage A (`docs/superpowers/specs/2026-05-22-data-modernization-
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
@@ -35,9 +36,31 @@ from sqlglot.errors import SqlglotError
 from primitives._shared.sql_files import walk_sql_files as _walk_sql_files
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def _quiet_sqlglot_command_fallback() -> Iterator[None]:
+    """Silence sqlglot's per-statement 'Falling back to parsing as a Command' WARNINGs.
+
+    ``pg_dump`` output interleaves ``ALTER TABLE … OWNER TO``, ``GRANT``, and other
+    non-DDL statements that sqlglot can't model; it logs one WARNING per statement as
+    it falls back to a generic ``Command`` node. On a real dump that's hundreds of
+    identical, un-actionable lines drowning the output. We don't inspect ``Command``
+    nodes anyway (only ``CREATE``/``ALTER`` structure), so raise the ``sqlglot`` logger
+    to ERROR for the duration of our parse and restore it after. Genuine parse
+    failures still surface — they raise ``ParseError``, which we handle explicitly. (#1582)
+    """
+    sqlglot_logger = logging.getLogger("sqlglot")
+    previous = sqlglot_logger.level
+    sqlglot_logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        sqlglot_logger.setLevel(previous)
 
 
 # ---------------------------------------------------------------------------
@@ -143,17 +166,38 @@ def parse_ddl_files(
 
     expressions: list[exp.Expression] = []
     errors: list[ParseError] = []
-    for sql_file in _walk_sql_files(ddl_path):
-        file_exprs, file_error = _parse_one_file(sql_file, dialect)
-        expressions.extend(file_exprs)
-        if file_error is not None:
-            errors.append(file_error)
+    with _quiet_sqlglot_command_fallback():
+        for sql_file in _walk_sql_files(ddl_path):
+            file_exprs, file_error = _parse_one_file(sql_file, dialect)
+            expressions.extend(file_exprs)
+            if file_error is not None:
+                errors.append(file_error)
     return expressions, errors
 
 
 # ---------------------------------------------------------------------------
 # Per-file parsing
 # ---------------------------------------------------------------------------
+
+
+def _strip_psql_meta_commands(text: str) -> str:
+    """Remove psql backslash meta-command lines so sqlglot sees only SQL.
+
+    A psql meta-command is a line whose first non-whitespace character is a
+    backslash (``\\restrict``, ``\\unrestrict``, ``\\connect``, ``\\encoding``,
+    ``\\c``, …). ``pg_dump`` 16.x+ emits ``\\restrict``/``\\unrestrict`` wrappers
+    around its ``--schema-only`` output; these are client directives, not SQL,
+    and abort a whole-file sqlglot parse. They only ever appear as their own
+    standalone lines at file scope (never mid-statement), so a leading-``\\``
+    line is unambiguously a directive and safe to drop. Blank lines are kept so
+    line numbers in any downstream parse error stay meaningful. (#1578)
+    """
+    if "\\" not in text:  # fast path — no backslash anywhere, nothing to strip
+        return text
+    stripped_lines = ["" if line.lstrip().startswith("\\") else line for line in text.splitlines()]
+    # Preserve a trailing newline if the original had one.
+    result = "\n".join(stripped_lines)
+    return result + "\n" if text.endswith("\n") else result
 
 
 def _parse_one_file(
@@ -172,10 +216,19 @@ def _parse_one_file(
     parse is reused here rather than re-parsed (issue #814).
     """
     try:
-        text = sql_file.read_text(encoding="utf-8")
+        raw_text = sql_file.read_text(encoding="utf-8")
     except OSError as exc:  # pragma: no cover — defended against, hard to trigger
         logger.warning("could not read %s: %s", sql_file, exc)
         return [], ParseError(path=sql_file, message=f"read error: {exc}")
+
+    # Strip psql backslash meta-commands (``\restrict``/``\unrestrict``/``\connect``/…)
+    # before parsing. Modern ``pg_dump`` (16.x+, a security-hardening change) wraps its
+    # ``--schema-only`` output in ``\restrict <token>`` (near the top) and ``\unrestrict
+    # <token>`` (at the bottom). These are psql client directives, not SQL — sqlglot raises
+    # a ParseError that aborts the WHOLE file, so every valid ``CREATE TABLE`` is discarded
+    # and the CLI falsely reports "no parseable DDL" (exit 5). Dropping the meta-command
+    # lines lets the real DDL parse. (#1578)
+    text = _strip_psql_meta_commands(raw_text)
 
     if dialect == "auto":
         effective_dialect, cached_parsed = _detect_dialect(text)

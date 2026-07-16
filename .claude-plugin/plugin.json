@@ -1,7 +1,7 @@
 {
   "name": "forge-foundry-claude",
   "description": "Forge Foundry engineering workbench \u2014 31 primitives (spec, review, security, modernization, SDET) as Claude Code skills with a bundled deterministic Python engine.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": {
     "name": "Arula",
     "email": "rbuchanan@inrhythm.com"
