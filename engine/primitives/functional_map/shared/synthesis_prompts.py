@@ -217,6 +217,18 @@ def build_synthesis_prompts(digest: FunctionalDigest) -> dict[str, Any]:
     if val_info:
         truncated["validations"] = val_info
 
+    # Derive candidate bounded-context slugs from path prefixes (the same signal
+    # slice_functional_map uses for fallback clustering). Providing these lets the
+    # harness assign a `context` slug to each FR it authors (#1595, Layer 1 accuracy).
+    path_prefix_slugs: list[str] = sorted(
+        {
+            segs[0]
+            for ep in digest.endpoints
+            for segs in ([s for s in ep.path.split("/") if s and not s.startswith(("{", ":"))],)
+            if segs
+        }
+    )
+
     # Shared context block — emitted ONCE; items reference via "uses".
     # *_index = COMPLETE map (dense strings); detail excerpts = rich top-N.
     context: dict[str, Any] = {
@@ -229,6 +241,16 @@ def build_synthesis_prompts(digest: FunctionalDigest) -> dict[str, Any]:
         "nav_edges": nav,
         "roles": roles,
         "validations": validations,
+        "fr_context_assignment_instruction": (
+            "When authoring any FR statement (fr_statements list), ALSO set the "
+            "`context` field to the bounded-context slug that owns this requirement, "
+            "IF determinable from the endpoint path, business_context, or domain signal "
+            "visible in this prompt. Use one of the slugs in `available_context_slugs` "
+            'if any match; leave `context` as empty string "" when uncertain or when '
+            "this FR spans multiple contexts. This field is OPTIONAL — leaving it empty "
+            "is always valid."
+        ),
+        "available_context_slugs": path_prefix_slugs,
     }
     if truncated:
         context["truncated"] = truncated

@@ -41,6 +41,28 @@
         "fields": {"type": "array", "items": {"$ref": "#/definitions/formField"}}
       }
     },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "selector"],
+      "description": "A per-screen interactive control found during runtime exploration (#1597).",
+      "properties": {
+        "id": {"type": "string", "description": "CTL-NNN identifier assigned by the SKILL body"},
+        "kind": {
+          "type": "string",
+          "enum": ["sort", "filter", "dropdown", "checkbox", "radio", "edit", "paginate", "modal", "button", "other"]
+        },
+        "selector": {"type": "string"},
+        "label": {"type": "string"},
+        "screenshot": {"type": "string", "description": "Own labeled shot: <route>__<label>__<SCR>.png. Empty when no dedicated shot was taken."},
+        "data_state_change": {"type": "string"},
+        "exercised_by": {
+          "type": "string",
+          "enum": ["auto", "agent", "detected_only"],
+          "description": "How the control was driven: auto (crawler), agent (Phase-B deep-drive), or detected_only (found but not exercised)."
+        }
+      }
+    },
     "screen": {
       "type": "object",
       "additionalProperties": false,
@@ -57,6 +79,15 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "Multi-role runs only (#1563): the role(s) whose crawl reached this screen. Omitted when empty."
+        },
+        "controls": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/control"},
+          "description": "Per-screen interactive controls found during runtime exploration (#1597). Omitted when empty."
+        },
+        "route_name": {
+          "type": "string",
+          "description": "Human-readable feature-name signal derived from the URL path (#1607). E.g. '/owners/find' → 'Owners Find'. Omitted when empty (root URL or no meaningful path segments)."
         }
       }
     },

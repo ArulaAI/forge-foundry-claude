@@ -466,7 +466,7 @@ def _render_digest(  # type: ignore[no-untyped-def]
         render_mermaid_dag,
     )
 
-    edges, _cycles = build_dependency_dag(tables, views)
+    edges, cycles = build_dependency_dag(tables, views)
 
     effective_threshold = (
         hotspot_threshold if hotspot_threshold is not None else DEFAULT_HOTSPOT_THRESHOLD
@@ -495,6 +495,7 @@ def _render_digest(  # type: ignore[no-untyped-def]
         views=views,
         sequences=sequences,
         dependency_dag_edges=edges,
+        cycles=cycles,
     )
 
     if format_ in ("json", "both"):

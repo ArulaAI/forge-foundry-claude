@@ -67,6 +67,105 @@ screens. Requires:
    text > placeholder > CSS; **(3) on SPAs, wait for the client route + network to settle**
    (set `budget.wait_until: networkidle`, and `wait-for --url`/`--networkidle` after actions).
 
+   ### Per-screen control sweep (#1600)
+
+   On **every screen you reach** (every URL where you call `snapshot`), immediately after
+   snapshotting, perform a full control sweep using the following sequence. This produces
+   the `controls[]` evidence that populates `Screen.controls` in `runtime-journeys.json`
+   and feeds the Functional Controls section of `RUNTIME-DISCOVERY.md`.
+
+   **Invariant: every control detected on a reached screen must end up as a `Control`
+   record — exercised (with a screenshot + `data_state_change`) or `detected_only` (if
+   it could not be safely exercised). No control is silently omitted.**
+
+   ```mermaid
+   flowchart TD
+       A["snapshot the screen"] --> B["controls detect"]
+       B --> C{kind?}
+       C -->|sort / dropdown| D["controls auto-exercise"]
+       D --> E["Control record: exercised_by=auto\ndata_state_change captured"]
+       C -->|filter / checkbox / radio /\nedit / modal / paginate| F["Exercise manually:\nread region before\nfill / select / click\nread region after\nsnapshot --label"]
+       F --> G["Control record: exercised_by=agent\ndata_state_change = before→after delta"]
+       C -->|button / other / not safe to exercise| H["Control record: exercised_by=detected_only"]
+       E --> I["Merge all Control records onto the screen"]
+       G --> I
+       H --> I
+   ```
+
+   **Step 1 — inventory the controls.** Run `controls detect` immediately after each
+   `snapshot`. It returns a JSON array of `Control` records (id, kind, selector, label)
+   with `exercised_by="detected_only"`. Capture this list — it is your authoritative
+   inventory for this screen.
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli controls detect --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # → JSON array: [{"id": "CTL-001", "kind": "sort", "selector": "th.sortable", "label": "Last Name", ...}, ...]
+   ```
+
+   **Step 2 — auto-exercise trivial controls.** Run `controls auto-exercise` once per
+   screen. It mechanically exercises every `sort` and `dropdown` control: for each it
+   reads the affected region text before, clicks/selects, reads after, captures a labeled
+   screenshot (`<route>__<label-slug>__<id>.png`), and emits a JSON array of `Control`
+   records with `exercised_by="auto"` and `data_state_change` set to the before→after
+   delta. Any navigation that would leave `url_scope` is refused (`data_state_change =
+   "SCOPE_REFUSED"`) and the page is navigated back automatically.
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli controls auto-exercise --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # → JSON array of auto-exercised Control records (exercised_by="auto", data_state_change filled)
+   ```
+
+   **Step 3 — exercise JUDGMENT controls manually.** For every control that `controls
+   detect` returned with kind `filter`, `checkbox`, `radio`, `edit`, `modal`, or
+   `paginate`, exercise it yourself using `fill`/`select`/`click` with a realistic value
+   (from the plan's `seed_data_ref` — **never inline secrets or synthetic values not in
+   the seed**). Capture a labeled screenshot and read the affected region before and after
+   to author the `data_state_change`. Use this pattern for each JUDGMENT control:
+
+   ```bash
+   # --- Before reading (capture the "before" state of the affected region) ---
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli read "#results-table" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # → prints the region's visible text (the "before" snapshot)
+
+   # --- Exercise the control (realistic value from seed_data_ref): ---
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "#search-input" --from-seed last_name --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli wait-for "#results-table" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+
+   # --- After reading (capture the "after" state) ---
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli read "#results-table" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # → diff against the "before" text to populate data_state_change
+
+   # --- Label the screenshot with what changed ---
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli snapshot --label "filter-by-last-name" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # → prints the labeled screenshot ref: "screenshots/<route>__filter-by-last-name__<id>.png"
+   ```
+
+   **Step 4 — collect all Control records.** Merge the outputs from steps 1–3 into the
+   final `controls[]` array for this screen:
+   - Auto-exercised controls: take the records from `controls auto-exercise` output
+     (they already have `exercised_by="auto"` and `data_state_change`).
+   - Manually exercised controls: update the corresponding records from `controls detect`
+     with `exercised_by="agent"`, the labeled screenshot ref, and the before→after
+     `data_state_change` you observed.
+   - Controls not exercised (button / other / any that could not be safely driven):
+     keep as `exercised_by="detected_only"` with `data_state_change=""`.
+
+   Write the merged `controls[]` onto the screen's entry in
+   `.foundry/context/runtime/.state/journeys.json` when you author that file (step 4
+   below). Every control from `controls detect` must appear — no control may be silently
+   dropped.
+
+   **Safe-exercise judgment.** Do not exercise a control if doing so would:
+   - Submit a destructive or irreversible action (anything on the plan's `deny` list —
+     logout, delete, purchase-confirm).
+   - Require inline secrets (use `seed_data_ref`; if the field needs a credential that
+     is not in seed data, record it as `detected_only`).
+   - Navigate outside `url_scope` (the step-CLI will refuse it at exit 3 anyway, but
+     do not attempt it).
+   In these cases record the control as `exercised_by="detected_only"` with a note in
+   `data_state_change` such as `"not exercised: destructive action"` or
+   `"not exercised: off-scope navigation"`.
+
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli session start --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli goto https://staging.example.com/login --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state

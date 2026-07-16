@@ -68,6 +68,36 @@ _PAGE_PARAM_RE = re.compile(r"@RequestParam[^)]*\)\s+(?:int|Integer|Pageable)\s+
 _REST_CTRL_RE = re.compile(r"@RestController\b")
 
 
+def humanize_view_name(view_name: str) -> str:
+    """Convert a Spring MVC view/template name to a human-readable display label.
+
+    Rules (applied in priority order):
+    1. Empty string → ``""`` (never guess; the extractor passes the view name only
+       when it has one; callers must pass ``""`` when no view is available).
+    2. Strip a leading directory segment (e.g. ``"owners/ownerDetails"`` → ``"ownerDetails"``).
+    3. Replace ``-`` / ``_`` with a space.
+    4. Split camelCase tokens on casing boundaries.
+    5. Title-case each word and join with a space.
+
+    The function is conservative: it only transforms recognizable slug/camelCase strings.
+    The result is a human label (e.g. ``"owners"`` → ``"Owners"``; ``"find-owners"`` →
+    ``"Find Owners"``; ``"createOrUpdateOwnerForm"`` → ``"Create Or Update Owner Form"``).
+    """
+    if not view_name:
+        return ""
+    # Strip a leading directory segment: "owners/ownerDetails" → "ownerDetails"
+    slug = view_name.rsplit("/", 1)[-1]
+    # Replace hyphens and underscores with spaces
+    slug = slug.replace("-", " ").replace("_", " ")
+    # Split camelCase: insert space before each uppercase letter that follows a lowercase
+    slug = re.sub(r"([a-z])([A-Z])", r"\1 \2", slug)
+    # Collapse multiple spaces and title-case each word
+    words = slug.split()
+    if not words:
+        return ""
+    return " ".join(w.capitalize() for w in words)
+
+
 def _collect_annotation_args(content: str, start: int) -> str:
     """Paren-depth collector starting at index of opening '('."""
     depth = 0

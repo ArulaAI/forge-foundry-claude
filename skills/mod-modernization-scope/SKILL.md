@@ -260,26 +260,37 @@ rather than the whole application — run the scoped path:
    exists as a real domain in the map. It returns `(valid, unknown)`. If `unknown` is non-empty
    the pick is wrong — go back to step 2.
 
-4. **Re-invoke with the resolved `--context`** so only the slice + its dependency closure are
-   synthesized:
+4. **Re-invoke with the resolved `--context` and `--feature-label`** so only the slice +
+   its dependency closure are synthesized and the spec carries the human title (#1609 F4):
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-scope --code-root <ROOT> \
      --run-id <RUN-ID> --continue --judgments <state-dir>/<run-id>/synthesis.json \
-     --context <resolved-domain>
+     --context <resolved-domain> --feature-label "<plain-English name>"
    ```
-   Pass `--context` once per owning context (repeatable for cross-context features). The CLI
-   writes only the scoped specs / BRDs / ADRs + a **scoped ROADMAP** that waves only the slice
-   and its dependency closure. Dependencies of the slice that are **not** in scope are documented
-   as **Boundary Contracts** (a new section appended to `MODERNIZATION.md`) — they are NOT
-   re-specced. A self-contained slice with no out-edges renders a "self-contained" note instead.
+   Pass `--context` once per owning context (repeatable for cross-context features). Pass
+   `--feature-label` with the exact plain-English string the operator gave (e.g.
+   `--feature-label "Vet Search"`) — when present, every in-scope spec is titled
+   `"<label> — Modernization Specification"` (e.g. **"Vet Search — Modernization
+   Specification"**) while the `spec_id` and filename stay the context slug
+   (`scope/spec-vets.spec.md` is still `spec-vets.spec.md`). The slug remains the stable
+   identifier; the feature label is the human-readable display title. Absent
+   `--feature-label` (or an empty string), the title is the slug-derived default —
+   byte-identical to a plain `--context` run. The CLI writes only the scoped specs / BRDs
+   / ADRs + a **scoped ROADMAP** that waves only the slice and its dependency closure.
+   Dependencies of the slice that are **not** in scope are documented as **Boundary
+   Contracts** (a new section appended to `MODERNIZATION.md`) — they are NOT re-specced.
+   A self-contained slice with no out-edges renders a "self-contained" note instead.
 
 **Key invariants:**
 - Analyzers always run whole-app (steps 1–2 are never sliced). Only synthesis + rendering is
   scoped (step 4).
 - Absent `--feature`/`--context` → a whole-app run, **byte-identical** to before (#1408
   additive invariant — no change to existing behavior).
+- Omitting `--feature-label` while using `--context` is also byte-identical to a plain
+  `--context` run — the feature label is additive and never required.
 - The CLI does **not** accept `--feature` directly: passing it errors with a pointer to the
-  SKILL body. The SKILL body is the resolver; the CLI accepts the resolved `--context` only.
+  SKILL body. The SKILL body is the resolver; the CLI accepts the resolved `--context` (and
+  the human `--feature-label`) only.
 
 **Mermaid diagram of the feature-scoping flow:**
 
