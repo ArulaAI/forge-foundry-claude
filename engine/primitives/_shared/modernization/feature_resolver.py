@@ -9,9 +9,10 @@ the scope synthesizer already use):
 
     1. **This module (deterministic, Python)** — score every bounded context against the
        feature's tokens using the richest available signals (domain label, endpoint
-       path+handler, FR statements, flows, app-digest entities), and emit the **ranked
-       candidate contexts + their match evidence**. ``suggestion`` is the deterministic
-       best guess; ``candidates`` is the ranked evidence the harness reasons over.
+       path+handler, endpoint display_name, FR statements, flows, app-digest entities,
+       runtime screen route_name/title), and emit the **ranked candidate contexts + their
+       match evidence**. ``suggestion`` is the deterministic best guess; ``candidates`` is
+       the ranked evidence the harness reasons over.
     2. **The harness (in-session judgment)** — reads the candidates + evidence and picks /
        confirms the owning context(s), applying business-vocabulary judgment the token
        matcher cannot (synonyms, renamed concepts, cross-context features).
@@ -20,6 +21,20 @@ the scope synthesizer already use):
 
 So Python earns its keep on the deterministic prep + validation; the model does the
 semantic mapping. Imports only sibling ``_shared`` modules — QUAL-2 clean.
+
+Signal sources per context (#1608 additions in bold):
+
+- Domain label (the bounded-context name itself)
+- Endpoint ``path`` + ``handler`` (grouped by the shared endpoint→context join)
+- **Endpoint ``display_name``** (F1 #1606: human page label derived from ``@RequestMapping``
+  title / route template / handler camelCase — e.g. ``"Vet Search"`` for ``/vets``)
+- FR statements whose ``domain`` field names the context
+- Webflow flow ids + view-state names
+- App-digest entity names (context-agnostic; weakly boost every context)
+- **Runtime screen ``route_name`` + ``title``** (F2 #1607, optional ``runtime_journeys``
+  dict — passed when ``runtime-journeys.json`` is available; screens are not context-scoped
+  in the runtime map so each screen's signals are appended to every context, the same
+  pattern as webflow flows and entity names)
 """
 
 from __future__ import annotations
@@ -121,14 +136,23 @@ def _context_signals(
     functional_map: dict[str, Any] | None,
     system_map: SystemMap,
     app_digest: dict[str, Any] | None,
+    runtime_journeys: dict[str, Any] | None = None,
 ) -> dict[str, list[str]]:
     """Build ``{context(domain): [matchable text signal, ...]}``.
 
-    Signals per context: the domain label itself, its endpoints' ``path`` + ``handler``
-    (grouped by the shared endpoint→context join), the FR statements whose ``domain``
-    names it, its flow ids / view-state names, and — appended to every context — the
-    app-digest entity names (they are not context-scoped in the digest, so they weakly
-    boost any context whose feature tokens also name an entity)."""
+    Signals per context:
+
+    - The domain label itself.
+    - Its endpoints' ``path``, ``handler``, and ``display_name`` (F1 #1606 — the human
+      page label, e.g. ``"Vet Search"``), grouped by the shared endpoint→context join.
+    - FR statements whose ``domain`` field names the context.
+    - Webflow flow ids + view-state names (context-agnostic; appended to every context).
+    - App-digest entity names (not context-scoped; appended to every context).
+    - Runtime screen ``route_name`` + ``title`` when ``runtime_journeys`` is provided
+      (F2 #1607/F3 #1608 — also context-agnostic; appended to every context the same way
+      as flows and entities, because the runtime map does not carry a context tag per
+      screen).
+    """
     signals: dict[str, list[str]] = defaultdict(list)
 
     domains: list[str] = []
@@ -143,13 +167,18 @@ def _context_signals(
 
     fm = functional_map or {}
     # Endpoints → context via the shared join (contexts_from_system_map), then attach the
-    # endpoint's path + handler text to the owning context.
+    # endpoint's path + handler + display_name (#1608 F1) to the owning context.
     endpoints = [e for e in fm.get("endpoints", []) if isinstance(e, dict)]
     ep_by_iface = _endpoints_by_context(system_map, endpoints)
     for context, eps in ep_by_iface.items():
         for ep in eps:
             signals[context].append(str(ep.get("path") or ""))
             signals[context].append(str(ep.get("handler") or ""))
+            # display_name (F1 #1606): human page label, e.g. "Vet Search" for /vets.
+            # Empty string when no clean label could be derived — skip those.
+            display_name = str(ep.get("display_name") or "").strip()
+            if display_name:
+                signals[context].append(display_name)
 
     # FR statements → context via their own ``domain`` field.
     for fr in fm.get("fr_statements", []) if isinstance(fm.get("fr_statements"), list) else []:
@@ -178,6 +207,16 @@ def _context_signals(
     if entities:
         for context in list(signals):
             signals[context].extend(entities)
+
+    # Runtime screen route_name + title (#1608 F3 / F2 #1607): screens carry human-readable
+    # names (e.g. route_name "Vet Search", title "PetClinic :: Vet Search") that can match
+    # a feature name even when the context slug + endpoint path don't contain those tokens.
+    # Screens are not context-scoped in the runtime map, so we append each screen's signals
+    # to every context — the same pattern as flows and entities (weak, cross-context boost).
+    runtime_screen_texts = _runtime_screen_texts(runtime_journeys)
+    if runtime_screen_texts:
+        for context in list(signals):
+            signals[context].extend(runtime_screen_texts)
 
     return dict(signals)
 
@@ -254,24 +293,57 @@ def _app_digest_entities(app_digest: dict[str, Any] | None) -> list[str]:
     return out
 
 
+def _runtime_screen_texts(runtime_journeys: dict[str, Any] | None) -> list[str]:
+    """Extract ``route_name`` + ``title`` strings from a runtime-journeys dict (#1608 F3).
+
+    Returns a flat list of non-empty strings from each screen.  Screens are not
+    context-scoped in the runtime map (``runtime-journeys.json`` has no domain tag per
+    screen), so the caller appends the full list to *every* context — the same weak
+    cross-context pattern as webflow flows and app-digest entities.
+    """
+    if not isinstance(runtime_journeys, dict):
+        return []
+    out: list[str] = []
+    for screen in (
+        runtime_journeys.get("screens", [])
+        if isinstance(runtime_journeys.get("screens"), list)
+        else []
+    ):
+        if not isinstance(screen, dict):
+            continue
+        route_name = str(screen.get("route_name") or "").strip()
+        if route_name:
+            out.append(route_name)
+        title = str(screen.get("title") or "").strip()
+        if title:
+            out.append(title)
+    return out
+
+
 def rank_feature_candidates(
     feature: str,
     *,
     functional_map: dict[str, Any] | None,
     system_map: SystemMap,
     app_digest: dict[str, Any] | None = None,
+    runtime_journeys: dict[str, Any] | None = None,
 ) -> FeatureCandidates:
     """Rank bounded contexts for *feature* — the deterministic input to harness synthesis.
 
     Scores each context by how many of the feature's tokens hit that context's signals
-    (domain label / endpoint path+handler / FR statement / flow / entity), each hit
-    recorded as evidence. Returns the ranked ``candidates`` + a deterministic ``suggestion``
-    (contexts within ``_MATCH_BAND`` of the top). ``low_confidence`` is set when even the
-    top context did not clear ``_SCORE_FLOOR`` — the harness then judges from evidence.
+    (domain label / endpoint path+handler / endpoint display_name / FR statement / flow /
+    entity / runtime screen route_name+title), each hit recorded as evidence. Returns the
+    ranked ``candidates`` + a deterministic ``suggestion`` (contexts within ``_MATCH_BAND``
+    of the top). ``low_confidence`` is set when even the top context did not clear
+    ``_SCORE_FLOOR`` — the harness then judges from evidence.
     This is NOT the final answer: the harness confirms/overrides the pick.
+
+    ``runtime_journeys`` is optional (default ``None``): pass the parsed
+    ``runtime-journeys.json`` dict when it is available alongside the functional map.
+    Existing callers that omit it are unaffected — the signal set is strictly additive.
     """
     feat_tokens = _tokens(feature)
-    signals = _context_signals(functional_map, system_map, app_digest)
+    signals = _context_signals(functional_map, system_map, app_digest, runtime_journeys)
 
     scored: list[ContextMatch] = []
     for context, texts in signals.items():

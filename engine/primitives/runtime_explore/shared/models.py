@@ -20,6 +20,19 @@ from pydantic import (
 )
 
 _Reached = Literal["crawl", "agent"]
+_ControlKind = Literal[
+    "sort",
+    "filter",
+    "dropdown",
+    "checkbox",
+    "radio",
+    "edit",
+    "paginate",
+    "modal",
+    "button",
+    "other",
+]
+_ExercisedBy = Literal["auto", "agent", "detected_only"]
 
 
 class FormField(BaseModel):
@@ -35,6 +48,27 @@ class Form(BaseModel):
     fields: tuple[FormField, ...] = ()
 
 
+class Control(BaseModel):
+    """A per-screen interactive control found during runtime exploration (#1597).
+
+    ``id`` is assigned by the SKILL body in the ``CTL-NNN`` sequence.
+    ``screenshot`` is the route-named labeled shot for this control, e.g.
+    ``<route>__<label>__<SCR>.png`` — empty when no dedicated shot was taken.
+    ``exercised_by`` records how the control was driven: ``auto`` (crawler
+    clicked it automatically), ``agent`` (the Phase-B deep-drive invoked it),
+    or ``detected_only`` (found in the DOM but not exercised — the default).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str  # CTL-NNN
+    kind: _ControlKind
+    selector: str
+    label: str = ""
+    screenshot: str = ""  # own labeled shot
+    data_state_change: str = ""
+    exercised_by: _ExercisedBy = "detected_only"
+
+
 class Screen(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
@@ -48,6 +82,17 @@ class Screen(BaseModel):
     #: multi-role run; EMPTY for a single-perspective/untagged run — and omitted from the
     #: serialized output when empty, so single-role JSON is byte-identical (no `roles: []`).
     roles: tuple[str, ...] = ()
+    #: Per-screen interactive controls found during runtime exploration (#1597). EMPTY
+    #: when no controls were detected — omitted from serialized output when empty so
+    #: existing output is byte-identical (no `controls: []`).
+    controls: tuple[Control, ...] = ()
+    #: Human-readable feature-name signal derived from the URL path (#1607).
+    #: E.g. ``/owners/find`` → ``"Owners Find"``, ``/vets`` → ``"Vets"``.
+    #: EMPTY when no meaningful path segments exist (root URL, bare hostname, etc.) —
+    #: omitted from serialized output when empty so existing output is byte-identical.
+    #: Consumed as a matching signal by the feature-resolver (F3); display rendering
+    #: (MD tables / Mermaid labels) is unchanged — it still uses ``Screen.title``.
+    route_name: str = ""
 
     @model_serializer(mode="wrap")
     def _ser(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -57,6 +102,14 @@ class Screen(BaseModel):
         # additionalProperties:false and existing goldens/assertions expect no `roles`).
         if not self.roles:
             data.pop("roles", None)
+        # Omit `controls` entirely when empty so existing output is byte-identical
+        # (mirrors the same omit-when-empty pattern as `roles`, #1597).
+        if not self.controls:
+            data.pop("controls", None)
+        # Omit `route_name` entirely when empty so existing output is byte-identical
+        # (mirrors the same omit-when-empty pattern as `roles`/`controls`, #1607).
+        if not self.route_name:
+            data.pop("route_name", None)
         return data
 
 
@@ -133,6 +186,7 @@ class RuntimeJourneys(BaseModel):
 
 
 __all__ = [
+    "Control",
     "CrawlGraph",
     "ExternalEdge",
     "Form",

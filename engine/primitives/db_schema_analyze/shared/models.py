@@ -260,6 +260,16 @@ class SchemaDigest(BaseModel):
     views: list[View] = Field(default_factory=list)
     sequences: list[Sequence] = Field(default_factory=list)
     dependency_dag_edges: list[tuple[str, str]] = Field(default_factory=list)
+    cycles: list[list[str]] = Field(
+        default_factory=list,
+        description=(
+            "Dependency cycles in the schema graph. Each inner list is the sorted "
+            "qualified table names of one strongly-connected component (size >= 2) "
+            "or a single-node self-loop. Populated by Stage C alongside "
+            "``dependency_dag_edges``; the outer list is sorted by each cycle's "
+            "lexicographically smallest member."
+        ),
+    )
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     foundry_primitive_versions: dict[str, str] = Field(default_factory=dict)
 

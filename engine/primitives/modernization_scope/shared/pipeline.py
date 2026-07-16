@@ -1022,6 +1022,41 @@ def filter_skeletons_to_scope(
     return [sk for sk in spec_skeletons if str(sk["domain"]).lower() in wanted]
 
 
+def apply_feature_label_to_skeletons(
+    spec_skeletons: list[dict[str, Any]],
+    feature_label: str,
+    scope_contexts: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return spec skeletons with the display title replaced by *feature_label* (#1609).
+
+    When *feature_label* is a non-empty string, every skeleton whose domain matches a
+    context in *scope_contexts* (case-insensitive) has its ``title`` replaced with
+    ``"<feature_label> — Modernization Specification"`` while the ``id`` and all other
+    fields stay unchanged (the slug remains the stable spec_id / filename).
+
+    Absent *scope_contexts* (``None``), the label is applied to **all** skeletons in the
+    list — this handles a scoped run where ``filter_skeletons_to_scope`` has already
+    narrowed the list to only the in-scope contexts.
+
+    If *feature_label* is empty (``""``), the list is returned **unchanged** — output is
+    byte-identical to a whole-app or plain ``--context`` run (additive invariant).
+
+    The function never mutates the input list; it returns a new list of shallow-copied
+    dicts so callers can freely chain it with ``filter_skeletons_to_scope``.
+    """
+    if not feature_label:
+        return spec_skeletons
+    new_title = f"{feature_label} — Modernization Specification"
+    wanted: set[str] | None = {c.lower() for c in scope_contexts} if scope_contexts else None
+    result: list[dict[str, Any]] = []
+    for sk in spec_skeletons:
+        if wanted is None or str(sk["domain"]).lower() in wanted:
+            result.append({**sk, "title": new_title})
+        else:
+            result.append(sk)
+    return result
+
+
 def render_boundary_section(scope: _Scope) -> str:
     """Render the **Boundary Contracts** section for a scoped run (#1542).
 
@@ -2081,7 +2116,10 @@ def build_slices(
         contexts = fallback_contexts(endpoints)
     if not contexts:
         return {}
-    return slice_functional_map(report, contexts)
+    # slice_functional_map now returns (slices, unrouted_frs); mod-scope only needs
+    # the slices — unrouted FRs are surfaced by the functional-map primitive itself.
+    slices, _unrouted = slice_functional_map(report, contexts)
+    return slices
 
 
 def build_parity_oracles(
@@ -2936,6 +2974,7 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
     continue_path: Path | None = None,
     generated_at: datetime | None = None,
     scope_contexts: list[str] | None = None,
+    feature_label: str = "",
     repo_set: RepoSet | None = None,
     modernized_overrides: set[str] | None = None,
 ) -> PipelineResult:
@@ -3039,6 +3078,10 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
         scope = resolve_scope(system_map, scope_contexts)
         all_spec_skeletons = build_spec_skeletons(system_map)
         spec_skeletons = filter_skeletons_to_scope(all_spec_skeletons, scope)
+        # F4 (#1609): when the harness resolved a --feature, stamp the display title of
+        # the in-scope skeleton(s) with the plain-English name. The id/filename stays the
+        # context slug (byte-identical absent a feature_label).
+        spec_skeletons = apply_feature_label_to_skeletons(spec_skeletons, feature_label)
         adr_skeletons = build_adr_skeletons(system_map)
         # Resolve the functional-map path — the continue leg runs before the default
         # leg's discover_artifacts, so fall back to the conventional location when the
@@ -3167,6 +3210,11 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
             artifacts, code_root=str(code_root), generated_at=generated_at
         )
     spec_skeletons = build_spec_skeletons(system_map)
+    # F4 (#1609): stamp the display title of the in-scope skeleton(s) with the resolved
+    # plain-English feature name. The id/filename stays the context slug (byte-identical
+    # absent a feature_label). Applied before fr_distribution so the labelled title flows
+    # into the synthesis prompt and the --no-synthesis / continue renders.
+    spec_skeletons = apply_feature_label_to_skeletons(spec_skeletons, feature_label, scope_contexts)
     adr_skeletons = build_adr_skeletons(system_map)
     # The functional-map FR layer, threaded into the spec-synthesis prompts (#1356).
     inventory = functional_map_to_inventory(_load(artifacts.functional_map))

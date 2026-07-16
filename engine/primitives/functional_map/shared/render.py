@@ -143,6 +143,24 @@ def _render_acceptance_criteria(
     return "\n".join(parts)
 
 
+def _render_needs_context_assignment(fr_statements: tuple[FRStatement, ...]) -> str:
+    if not fr_statements:
+        return ""
+    parts: list[str] = [
+        "## 14. Needs Context Assignment\n",
+        "> ⚠️ The following FRs could not be routed to any bounded-context slice. "
+        "Set `context` on each FR in synthesis.json (or update source_evidence to "
+        "cite an endpoint) and re-run the sliced pass.\n",
+        "| ID | Statement | Source Evidence |",
+        "|----|-----------|-----------------|",
+    ]
+    for fr in fr_statements:
+        evidence = ", ".join(fr.source_evidence[:5]) if fr.source_evidence else "—"
+        parts.append(f"| {fr.id} | {fr.statement} | {evidence} |")
+    parts.append("")
+    return "\n".join(parts)
+
+
 def _render_business_rules(business_rules: tuple[BusinessRule, ...]) -> str:
     if not business_rules:
         return "_No data available._"
@@ -307,12 +325,17 @@ def render_markdown(report: FunctionalMapReport) -> str:
     out.append(_render_form_fields(d))
     out.append("")
 
+    # §14 Needs-Context-Assignment (unrouted FRs — no-drop invariant, #1595)
+    section = _render_needs_context_assignment(report.needs_context_assignment)
+    if section:
+        out.append(section)
+
     return "\n".join(out) + "\n"
 
 
 def render_json(report: FunctionalMapReport) -> str:
     d = report.digest
-    payload = {
+    payload: dict[str, Any] = {
         "primitive": "functional-map",
         "schema_version": "2.0",
         "synthesized": report.synthesized,
@@ -330,4 +353,16 @@ def render_json(report: FunctionalMapReport) -> str:
         "acceptance_criteria": [a.model_dump() for a in report.acceptance_criteria],
         "business_rules": [b.model_dump() for b in report.business_rules],
     }
+    # No-drop invariant (#1595): include needs_context_assignment in the whole-app JSON
+    # when unrouted FRs exist. Omitted (key absent) when empty so per-slice JSON and
+    # whole-app JSON with no unrouted FRs stay byte-identical to prior output.
+    if report.needs_context_assignment:
+        payload["needs_context_assignment"] = [
+            {
+                "id": fr.id,
+                "statement": fr.statement,
+                "source_evidence": list(fr.source_evidence),
+            }
+            for fr in report.needs_context_assignment
+        ]
     return json.dumps(payload, indent=2, sort_keys=True)

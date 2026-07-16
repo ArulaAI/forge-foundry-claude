@@ -19,6 +19,7 @@ from primitives.functional_map.shared.models import (
     ValidationRule,
     WebflowDefinition,
 )
+from primitives.functional_map.shared.sub_extractors.spring_mvc import humanize_view_name
 
 if TYPE_CHECKING:
     from primitives.functional_map.shared.recon import ReconReport
@@ -198,6 +199,54 @@ def _resolve_form_endpoint(
     if view and view in view_to_ep:
         return view_to_ep[view]
     return ""
+
+
+def _view_name_index(raw_business_contexts: list[dict[str, Any]]) -> dict[tuple[str, str], str]:
+    """Build a (path, method) → view_name index from raw business context dicts.
+
+    Used by :func:`_assign_display_names` to populate :attr:`Endpoint.display_name`
+    from the best available static signal (#1606 F1). Keyed by (path, method) so it
+    aligns with the same key used for endpoint dedup/id-assignment.
+    """
+    idx: dict[tuple[str, str], str] = {}
+    for bc in raw_business_contexts:
+        view = str(bc.get("view_name", ""))
+        if not view:
+            continue
+        path = str(bc.get("path", ""))
+        method = str(bc.get("method", ""))
+        key = (path, method)
+        if key not in idx:
+            idx[key] = view
+    return idx
+
+
+def _assign_display_names(
+    endpoints: list[Endpoint],
+    raw_business_contexts: list[dict[str, Any]],
+) -> list[Endpoint]:
+    """Overlay a human :attr:`Endpoint.display_name` where a static signal is available.
+
+    Priority order (#1606 F1 — static signals only; F2 will overlay runtime Screen.title):
+    1. Spring MVC ``view_name`` (from ``business_context.view_name``) → humanized via
+       :func:`~primitives.functional_map.shared.sub_extractors.spring_mvc.humanize_view_name`.
+    2. Absent a view name: ``""`` (no noisy guess; the field stays empty).
+
+    Endpoints without a derivable display name are returned unchanged (preserving
+    byte-identity for the common case where no view names are present). The function
+    is pure — it returns a new list and does not mutate the input.
+    """
+    view_idx = _view_name_index(raw_business_contexts)
+    result: list[Endpoint] = []
+    for ep in endpoints:
+        key = (ep.path, ep.method)
+        view = view_idx.get(key, "")
+        display = humanize_view_name(view) if view else ""
+        if display:
+            result.append(ep.model_copy(update={"display_name": display}))
+        else:
+            result.append(ep)
+    return result
 
 
 def _dedup_endpoints(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -646,7 +695,7 @@ def _build_capabilities(
     }
     return tuple(
         Capability(
-            id=f"FR-{i:03d}",
+            id=f"CAP-{i:03d}",
             action=f"{ep.method} {ep.path}",
             endpoint_id=ep.id,
             roles=guard_roles_frozen.get(ep.id, ()),
@@ -706,6 +755,9 @@ def extract(recon: ReconReport) -> FunctionalDigest:
 
     # ---- Endpoints ----
     endpoints, key_to_id = _build_endpoints(raw_eps)
+
+    # ---- Display names (F1: static signals — view/route names → humanized labels) ----
+    endpoints = _assign_display_names(endpoints, raw_business_contexts)
 
     # ---- Guards ----
     guard_objs = _build_guards(raw_guards, key_to_id, endpoints)

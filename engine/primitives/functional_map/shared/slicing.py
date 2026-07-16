@@ -33,6 +33,7 @@ from primitives._shared.modernization.context_resolver import (
 )
 from primitives._shared.modernization.iface import http_iface
 from primitives.functional_map.shared.models import (
+    FRStatement,
     FunctionalDigest,
     FunctionalMapReport,
 )
@@ -201,7 +202,7 @@ def _route_journeys(
 def slice_functional_map(
     report: FunctionalMapReport,
     contexts: Mapping[str, Sequence[str]],
-) -> dict[str, FunctionalMapReport]:
+) -> tuple[dict[str, FunctionalMapReport], list[FRStatement]]:
     """Partition *report* into one full :class:`FunctionalMapReport` per context.
 
     Every functional-map fact tied to an endpoint — its ``business_context``,
@@ -211,15 +212,30 @@ def slice_functional_map(
     webflow flows and the role reconciliation are app-wide vocabulary and are
     replicated into every slice unchanged.
 
-    Returns ``{context-slug: FunctionalMapReport}``. No endpoint lands in two slices
-    (each is resolved to exactly one context); an endpoint that resolves to no context
-    (multi-context, no match) is simply absent from every slice.
+    FR routing uses a two-layer precedence (#1595 no-drop invariant):
+    1. ``fr.context`` (harness-assigned during synthesis, Layer 1 accuracy) — if set
+       and it resolves to a present context (slug-normalised), route there.
+    2. ``source_evidence`` → ``ep_to_context`` join (existing behaviour, Layer 2
+       completeness backstop).
+    3. Single-context fast-path: if only one context exists, every unresolved FR
+       falls to it.
+    4. **UNROUTED** — the FR is collected in the returned ``unrouted_frs`` list.
+       It is *never* silently dropped.
+
+    Returns ``({context-slug: FunctionalMapReport}, unrouted_frs)``.
+    No endpoint lands in two slices (each is resolved to exactly one context);
+    an endpoint that resolves to no context (multi-context, no match) is simply
+    absent from every slice.
     """
     d = report.digest
     ep_to_context = resolve_endpoint_contexts(d.endpoints, contexts)
     contexts_present = sorted(set(ep_to_context.values()))
     if not contexts_present:
-        return {}
+        return {}, list(report.fr_statements)
+
+    # Build a slug→context map so harness-assigned context slugs can be resolved
+    # against the present contexts (same slug normalisation as _slug()).
+    ctx_slug_map: dict[str, str] = {_slug(c): c for c in contexts_present}
 
     # Endpoint-keyed collections route directly by endpoint_id.
     ep_by_ctx = _route_by_key(d.endpoints, lambda e: e.id, ep_to_context, contexts_present)
@@ -230,15 +246,61 @@ def slice_functional_map(
     val_by_ctx = _route_validation_rules(bc_by_ctx, contexts_present)
     nav_by_ctx = _route_nav_edges(d.nav_edges, d.endpoints, ep_to_context, contexts_present)
 
-    # FR id → context (a Capability.id IS the FR id and carries the endpoint_id), then
-    # route fr_statements + acceptance_criteria through it.
+    # FR id → context: two-layer routing with a completeness backstop (#1595).
+    #
+    # Layer 1 (accuracy): if the harness set ``fr.context`` to a present context slug,
+    # use it directly — this is the most reliable signal.
+    #
+    # Layer 2 (completeness backstop): route by ``source_evidence`` endpoint ids.
+    # Each FRStatement carries a tuple of endpoint ids in source_evidence; we pick the
+    # first that resolves to a context.  The single-context fast-path assigns every FR
+    # that has no resolvable evidence to the sole context.
+    #
+    # If neither layer resolves, the FR is UNROUTED (collected, never dropped).
+    #
+    # NOTE: capabilities now carry CAP-NNN ids (distinct from FR-NNN fr_statements ids).
+    # Routing FRs through cap.id is therefore no longer valid; source_evidence is the
+    # correct link (it holds the EP-NNN endpoint ids the LLM cited as evidence).
+    single_context = contexts_present[0] if len(contexts_present) == 1 else None
     fr_to_ctx: dict[str, str] = {}
-    for ctx in contexts_present:
-        for cap in caps_by_ctx[ctx]:
-            fr_to_ctx.setdefault(cap.id, ctx)
+    unrouted_frs: list[FRStatement] = []
+    for fr in report.fr_statements:
+        ctx_hit: str | None = None
+
+        # Layer 1: harness-assigned context slug.
+        if fr.context:
+            # Exact match first; then slug-normalised match.
+            if fr.context in contexts_present:
+                ctx_hit = fr.context
+            else:
+                ctx_hit = ctx_slug_map.get(_slug(fr.context))
+
+        # Layer 2: source_evidence → endpoint → context join.
+        if ctx_hit is None:
+            for ev in fr.source_evidence:
+                ctx_hit = ep_to_context.get(ev)
+                if ctx_hit is not None:
+                    break
+
+        # Single-context fast-path.
+        if ctx_hit is None:
+            ctx_hit = single_context
+
+        if ctx_hit is not None:
+            fr_to_ctx[fr.id] = ctx_hit
+        else:
+            # UNROUTED: never silently dropped (#1595).
+            unrouted_frs.append(fr)
+
     fr_by_ctx = _route_by_key(report.fr_statements, lambda f: f.id, fr_to_ctx, contexts_present)
+    # Acceptance criteria follow their FR: ACs whose fr_id is in the unrouted set are
+    # collected alongside the unrouted FRs (they are not injected into any slice).
+    unrouted_fr_ids = {fr.id for fr in unrouted_frs}
     ac_by_ctx = _route_by_key(
-        report.acceptance_criteria, lambda a: a.fr_id, fr_to_ctx, contexts_present
+        report.acceptance_criteria,
+        lambda a: a.fr_id,
+        {k: v for k, v in fr_to_ctx.items() if k not in unrouted_fr_ids},
+        contexts_present,
     )
 
     # Flows carry their own step endpoints; journeys + business_rules follow the flow.
@@ -274,8 +336,10 @@ def slice_functional_map(
             fr_statements=tuple(fr_by_ctx[ctx]),
             acceptance_criteria=tuple(ac_by_ctx[ctx]),
             synthesized=report.synthesized,
+            # Per-slice reports carry no needs_context_assignment — only the
+            # whole-app report surfaces unrouted FRs (set by _build_slices).
         )
-    return slices
+    return slices, unrouted_frs
 
 
 def contexts_from_system_map(

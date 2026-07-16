@@ -127,12 +127,21 @@ def _build_slices(
     *,
     system_map_path: Path | None,
     contexts: dict[str, list[str]] | None,
-) -> tuple[tuple[SliceArtifact, ...], str]:
-    """Slice *report* per bounded context; return the artifacts + their provenance."""
+) -> tuple[tuple[SliceArtifact, ...], str, FunctionalMapReport]:
+    """Slice *report* per bounded context; return artifacts, provenance, and the
+    updated whole-app report (with needs_context_assignment populated, #1595).
+    """
     resolved, provenance = _resolve_contexts(
         report, system_map_path=system_map_path, contexts=contexts
     )
-    sliced = slice_functional_map(report, resolved)
+    sliced, unrouted_frs = slice_functional_map(report, resolved)
+    # Attach unrouted FRs to the whole-app report so the caller can render the
+    # no-drop invariant section in the whole-app MD + JSON (#1595).
+    whole_app_report = (
+        report.model_copy(update={"needs_context_assignment": tuple(unrouted_frs)})
+        if unrouted_frs
+        else report
+    )
     artifacts = tuple(
         SliceArtifact(
             slug=slug,
@@ -141,7 +150,7 @@ def _build_slices(
         )
         for slug, slice_report in sorted(sliced.items())
     )
-    return artifacts, provenance
+    return artifacts, provenance, whole_app_report
 
 
 def run(
@@ -202,13 +211,14 @@ def run(
             synthesized=True,
         )
         audit = audit_synthesis(digest, syn)
-        md = render_markdown(report)
         code = 6 if audit.below_floor else 0
-        slices, provenance = (
-            _build_slices(report, system_map_path=system_map_path, contexts=contexts)
-            if sliced_mode
-            else ((), None)
-        )
+        if sliced_mode:
+            slices, provenance, report = _build_slices(
+                report, system_map_path=system_map_path, contexts=contexts
+            )
+        else:
+            slices, provenance = (), None
+        md = render_markdown(report)
         return PipelineResult(
             code,
             md,
@@ -231,11 +241,12 @@ def run(
                 reconciliation=RoleReconciliation(reconciled=digest.roles),
                 synthesized=False,
             )
-            slices, provenance = (
-                _build_slices(report, system_map_path=system_map_path, contexts=contexts)
-                if sliced_mode
-                else ((), None)
-            )
+            if sliced_mode:
+                slices, provenance, report = _build_slices(
+                    report, system_map_path=system_map_path, contexts=contexts
+                )
+            else:
+                slices, provenance = (), None
             return PipelineResult(
                 0,
                 render_markdown(report),

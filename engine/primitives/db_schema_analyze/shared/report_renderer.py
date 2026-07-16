@@ -227,8 +227,8 @@ def _build_markdown_orphans(digest: SchemaDigest) -> list[str]:
 
 
 def _build_markdown_cycles(digest: SchemaDigest) -> list[str]:
-    """Dependency cycles derived from the edge list."""
-    cycles = _find_cycles(digest.dependency_dag_edges)
+    """Dependency cycles sourced from ``digest.cycles`` (populated at Stage C)."""
+    cycles = digest.cycles
     if not cycles:
         return ["## Dependency cycles", "", "_No dependency cycles detected._", ""]
     out = [
@@ -384,93 +384,6 @@ def _qn(schema: str, name: str) -> str:
     if schema:
         return f"{schema}.{name}"
     return name
-
-
-def _find_cycles(edges: list[tuple[str, str]]) -> list[list[str]]:
-    """Tarjan SCC on the edge list — returns SCCs of size >= 2 or self-loops.
-
-    The renderer needs cycles for the markdown summary but does not
-    take them as an argument (the caller passes a digest, not a tuple).
-    Re-deriving them here keeps the public signature minimal at the
-    cost of a second SCC pass; the cost is negligible against the JSON
-    serialisation already happening.
-
-    The implementation mirrors
-    :func:`primitives.db_schema_analyze.shared.dependency_graph._find_cycles`
-    so behaviour matches Stage C's cycle list byte-for-byte.
-    """
-    if not edges:
-        return []
-    graph: dict[str, set[str]] = {}
-    nodes: set[str] = set()
-    for src, tgt in edges:
-        graph.setdefault(src, set()).add(tgt)
-        nodes.add(src)
-        nodes.add(tgt)
-    for node in nodes:
-        graph.setdefault(node, set())
-
-    sccs = _tarjan_scc(graph)
-    cycles: list[list[str]] = []
-    for scc in sccs:
-        if len(scc) > 1 or any(node in graph.get(node, set()) for node in scc):
-            cycles.append(sorted(scc))
-    cycles.sort(key=lambda c: (c[0], c))
-    return cycles
-
-
-def _tarjan_scc(graph: dict[str, set[str]]) -> list[list[str]]:
-    """Iterative Tarjan SCC — mirror of ``dependency_graph._tarjan_scc``."""
-    index_counter = [0]
-    stack: list[str] = []
-    on_stack: set[str] = set()
-    indices: dict[str, int] = {}
-    lowlinks: dict[str, int] = {}
-    result: list[list[str]] = []
-
-    def strongconnect(start: str) -> None:
-        work: list[tuple[str, list[str]]] = [(start, sorted(graph.get(start, set())))]
-        indices[start] = index_counter[0]
-        lowlinks[start] = index_counter[0]
-        index_counter[0] += 1
-        stack.append(start)
-        on_stack.add(start)
-        while work:
-            node, successors = work[-1]
-            advanced = False
-            while successors:
-                succ = successors.pop(0)
-                if succ not in indices:
-                    indices[succ] = index_counter[0]
-                    lowlinks[succ] = index_counter[0]
-                    index_counter[0] += 1
-                    stack.append(succ)
-                    on_stack.add(succ)
-                    work.append((succ, sorted(graph.get(succ, set()))))
-                    advanced = True
-                    break
-                if succ in on_stack:
-                    lowlinks[node] = min(lowlinks[node], indices[succ])
-            if advanced:
-                continue
-            work.pop()
-            if work:
-                parent = work[-1][0]
-                lowlinks[parent] = min(lowlinks[parent], lowlinks[node])
-            if lowlinks[node] == indices[node]:
-                component: list[str] = []
-                while True:
-                    member = stack.pop()
-                    on_stack.discard(member)
-                    component.append(member)
-                    if member == node:
-                        break
-                result.append(sorted(component))
-
-    for node in sorted(graph):
-        if node not in indices:
-            strongconnect(node)
-    return result
 
 
 __all__ = [

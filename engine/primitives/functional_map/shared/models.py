@@ -34,6 +34,14 @@ class Endpoint(_Frozen):
     handler: str
     file: str
     line: int
+    #: Human-readable page / feature label for this endpoint, derived deterministically
+    #: from static signals (Spring MVC view name, named route, or handler label) during
+    #: Phase B extraction (#1606). Conservative: populated only when a clean label is
+    #: derivable; empty string otherwise. F2 (runtime_explore reconciliation) may
+    #: overlay a runtime :attr:`Screen.title` in a later pass — F1 sources only static
+    #: signals. Backward-compatible: defaults to ``""`` so existing reports that carry
+    #: no view/route signal are byte-additive (the field is present but empty).
+    display_name: str = ""
 
 
 class Guard(_Frozen):
@@ -50,7 +58,7 @@ class Role(_Frozen):
 
 
 class Capability(_Frozen):
-    id: str  # FR-NNN
+    id: str  # CAP-NNN
     action: str
     endpoint_id: str
     roles: tuple[str, ...] = ()
@@ -220,6 +228,14 @@ class FRStatement(_Frozen):
         "functional",
     ] = "functional"
     source_evidence: tuple[str, ...] = ()
+    #: Bounded-context slug the in-session harness may assign during synthesis (Layer 1
+    #: accuracy, #1595). When non-empty the slicer routes this FR to that context
+    #: directly, bypassing the source_evidence → endpoint → context join. Leave as ""
+    #: when the owning context is not determinable from the whole-app synthesis prompt;
+    #: the slicer's backstop then attempts the source_evidence join and, failing that,
+    #: collects the FR in needs_context_assignment rather than silently dropping it.
+    #: Backward-compatible: defaults to "" so existing fixtures/JSON still validate.
+    context: str = ""
 
 
 class AcceptanceCriterion(_Frozen):
@@ -261,6 +277,12 @@ class FunctionalMapReport(_Frozen):
     fr_statements: tuple[FRStatement, ...] = ()
     acceptance_criteria: tuple[AcceptanceCriterion, ...] = ()
     synthesized: bool = False
+    #: FRs that could not be routed to any bounded-context slice (#1595 no-drop
+    #: invariant). Only populated on the whole-app report when slicing is active
+    #: and one or more FRs have neither a harness-assigned context nor source_evidence
+    #: that resolves to a context. Empty for per-slice reports (slices carry only the
+    #: FRs that DID route to them); empty for whole-app runs with no slicing.
+    needs_context_assignment: tuple[FRStatement, ...] = ()
 
 
 def _enforced_at_for(

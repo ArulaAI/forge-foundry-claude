@@ -53,9 +53,19 @@ def _slugify_route(url: str) -> str:
     return slug[:_MAX_SLUG_LEN].strip("-") or "home"
 
 
-def screenshot_name(screen_id: str, url: str) -> str:
-    """Return the route-named PNG filename for a screen: ``<route-slug>__<id>.png``."""
-    return f"{_slugify_route(url)}__{screen_id}.png"
+def screenshot_name(screen_id: str, url: str, label: str | None = None) -> str:
+    """Return the route-named PNG filename for a screen.
+
+    Without a label:  ``<route-slug>__<id>.png``   (byte-identical to the pre-#1599 form)
+    With a label:     ``<route-slug>__<label>__<id>.png``
+
+    The label is slugified with the same ``_NON_SLUG_RE`` rule so it stays filename-safe.
+    """
+    route = _slugify_route(url)
+    if label:
+        safe_label = _NON_SLUG_RE.sub("-", label.lower()).strip("-")[:40]
+        return f"{route}__{safe_label}__{screen_id}.png"
+    return f"{route}__{screen_id}.png"
 
 
 __all__ = ["screenshot_name", "templatize"]

@@ -228,17 +228,35 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    Contracts**, not re-specced. Re-run with the same `--run-id` and the next `--feature`
    to advance a piece at a time. **The analyzers ALWAYS run whole-app** — global discovery
    is required to compute what the slice depends on; only the SP2 scope stage (stage 5) is
-   scoped. The flow:
+   scoped.
+
+   **The feature name is preserved as the spec's human title (#1609 F4).** Once the
+   plain-English name (e.g. `"Vet Search"`) is resolved to a bounded-context domain slug
+   (e.g. `"vets"`), pass BOTH to the scope CLI continue leg:
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-scope --code-root <ROOT> \
+     --run-id <RUN-ID> --continue --judgments <state-dir>/<run-id>/synthesis.json \
+     --context vets --feature-label "Vet Search"
+   ```
+
+   `--context` selects the slice; the slug stays the stable `spec_id` and filename
+   (`scope/spec-vets.spec.md`). `--feature-label` titles every in-scope spec with the
+   plain-English name — the rendered heading becomes **"Vet Search — Modernization
+   Specification"** instead of the raw slug. Absent `--feature-label`, the title is the
+   slug-derived default (byte-identical to a plain `--context` run).
+
+   Concrete end-to-end example — `/mod-modernization . --feature "Vet Search"`:
 
    ```mermaid
    flowchart TD
-     A["--feature '<name>'"] --> B["stages 1–4 run WHOLE-APP<br/>(reuse cache on a --run-id re-run)"]
-     B --> C["SP2 extract leg (whole-app)<br/>system-map + functional-map on disk"]
-     C --> D["rank_feature_candidates(feature, functional_map, system_map, app_digest)<br/>→ ranked candidate contexts + evidence"]
-     D --> E["JUDGE in-session: pick owning context(s)<br/>(business vocabulary ≠ code identifiers)"]
-     E --> F["validate_context_selection(picked, system_map)<br/>→ any unknown context → STOP, report candidates"]
-     F --> G["SP2 continue leg<br/>--continue --context <resolved-domain> …"]
-     G --> H["scope/spec-<slice>.spec.md + BRD + ADRs<br/>+ scoped ROADMAP + Boundary Contracts on MODERNIZATION.md"]
+     A["--feature 'Vet Search'"] --> B["stages 1–4 run WHOLE-APP<br/>(reuse cache on a --run-id re-run)"]
+     B --> C["SP2 extract leg whole-app<br/>system-map.json + functional-map.json on disk"]
+     C --> D["rank_feature_candidates('Vet Search', functional_map, system_map, app_digest)<br/>→ candidates: vets/4, owners/1; suggestion: ['vets']"]
+     D --> E["JUDGE in-session: 'Vet Search' → context 'vets'<br/>(evidence: /vets path, VetController handler,<br/>display_name 'Vet List' on /vets endpoint)"]
+     E --> F["validate_context_selection(['vets'], system_map) → valid"]
+     F --> G["SP2 continue leg<br/>--context vets --feature-label 'Vet Search'"]
+     G --> H["scope/spec-vets.spec.md titled 'Vet Search — Modernization Specification'<br/>+ BRD + ADRs + scoped ROADMAP + Boundary Contracts"]
    ```
 
    - **Resolve `--feature` → context(s) with judgment.** After the SP2 extract leg has
@@ -247,17 +265,26 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
      `rank_feature_candidates(feature, functional_map=<fm dict>, system_map=<map>,
      app_digest=<digest dict>)` for each `--feature`. It returns ranked `.candidates`
      (context + score + match evidence) + a deterministic `.suggestion` + `.low_confidence`.
-     **You** pick the owning context(s) — accept the suggestion or override it from the
-     evidence, because the business feature name rarely matches the code's identifiers.
+     The resolver scores each context by how many of the feature's tokens hit that context's
+     **domain label, endpoint paths + handlers, FR statements, flow ids/view-state names,
+     and app-digest entity names**. Each `Endpoint` in the functional-map also carries an
+     optional `display_name` (F1, #1606 — the human page/view/route name captured by
+     `/functional-map`); read the candidate evidence — it will surface those display names —
+     to confirm or override the suggestion, because the business feature name rarely matches
+     the code's identifiers. (Threading `display_name` as an active scoring signal is planned
+     for F2/F3; today it is visible in the evidence list but does not change the numeric score.)
      A `--context <domain>` skips this (it IS the resolved context).
    - **Validate the pick.** Call `validate_context_selection(picked, system_map)` → it
      returns `(valid, unknown)`. If `unknown` is non-empty, **STOP** and report the ranked
      candidate contexts (the operator named a feature you can't confidently place) rather
      than silently modernizing the wrong slice or nothing.
-   - **Run the scope stage scoped.** Pass `--context <domain>` (once per resolved context)
-     to the SP2 continue-leg invocation. Only that slice's specs/BRDs/ADRs + a scoped
-     `ROADMAP` are written; its dependencies land in the **Boundary Contracts** section on
-     `MODERNIZATION.md`. Record the scoped feature(s)/context(s) in `state.json`.
+   - **Run the scope stage scoped — pass the feature label.** Pass `--context <domain>`
+     (once per resolved context) AND `--feature-label "<name>"` (the original plain-English
+     string from the operator) to the SP2 continue-leg invocation. `--feature-label` is what
+     gives the emitted spec its human title; omitting it leaves the title as the slug-derived
+     default. Only that slice's specs/BRDs/ADRs + a scoped `ROADMAP` are written; its
+     dependencies land in the **Boundary Contracts** section on `MODERNIZATION.md`. Record
+     the scoped feature(s)/context(s) in `state.json`.
    - **Absent `--feature`/`--context`** → the whole-app run, **byte-identical** to before
      (the #1408 additive invariant; the golden fixtures are unchanged).
 

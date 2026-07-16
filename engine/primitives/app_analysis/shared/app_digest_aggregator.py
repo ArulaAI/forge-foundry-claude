@@ -175,6 +175,64 @@ def _extract_debt_items(section_body: str) -> list[str]:
     return items
 
 
+def _find_clause_boundary_left(line: str, before: int) -> int:
+    """Return the position of the last clause boundary (``;``/``:`` or a real
+    sentence-ending ``.``) strictly before *before*.
+
+    A ``.`` is treated as a real sentence terminator only when it is NOT flanked
+    by a digit on both sides (version-number periods like ``7.0.7`` are skipped).
+    ``;`` and ``:`` are unconditional boundaries.
+    Returns ``-1`` when no boundary is found.
+    """
+    best = -1
+    for delim in ";:":
+        pos = line.rfind(delim, 0, before)
+        if pos != -1 and pos > best:
+            best = pos
+    # Walk backwards for a real sentence period (not a version-number dot).
+    search_from = before - 1
+    while search_from >= 0:
+        pos = line.rfind(".", 0, search_from + 1)
+        if pos == -1:
+            break
+        left_ch = line[pos - 1] if pos > 0 else ""
+        right_ch = line[pos + 1] if pos + 1 < len(line) else ""
+        if not (left_ch.isdigit() and right_ch.isdigit()):
+            best = max(best, pos)
+            break
+        search_from = pos - 1
+    return best
+
+
+def _find_clause_boundary_right(line: str, after: int) -> int:
+    """Return the position of the next clause boundary (``;``/``:`` or a real
+    sentence-ending ``.``) at or after *after*.
+
+    A ``.`` is treated as a real sentence terminator only when it is NOT flanked
+    by a digit on both sides (version-number periods like ``3.3.4`` are skipped).
+    ``;`` and ``:`` are unconditional boundaries.
+    Returns ``len(line)`` when no boundary is found.
+    """
+    best = len(line)
+    for delim in ";:":
+        pos = line.find(delim, after)
+        if pos != -1 and pos < best:
+            best = pos
+    # Walk forward for a real sentence period (not a version-number dot).
+    search_from = after
+    while search_from < len(line):
+        pos = line.find(".", search_from)
+        if pos == -1:
+            break
+        left_ch = line[pos - 1] if pos > 0 else ""
+        right_ch = line[pos + 1] if pos + 1 < len(line) else ""
+        if not (left_ch.isdigit() and right_ch.isdigit()):
+            best = min(best, pos)
+            break
+        search_from = pos + 1
+    return best
+
+
 def _extract_migration_state(section_body: str) -> str | None:
     """Extract the coexistence signal from the §15 modernization analysis body.
 
@@ -182,19 +240,19 @@ def _extract_migration_state(section_body: str) -> str | None:
     boundaries (``.``/``;``/``:``, or line start/end) rather than a fixed-width
     character window, so the excerpt reads as a whole phrase instead of being cut
     mid-word (#1583).
+
+    A ``.`` inside a version number (digit on both sides, e.g. ``7.0.7``) is
+    skipped as a clause boundary so version strings are never cut mid-token
+    (#1589).
     """
     for line in section_body.splitlines():
         m = _MIGRATION_STATE_RE.search(line)
         if not m:
             continue
         # Expand left to the previous clause boundary, right to the next one.
-        left = max(
-            (line.rfind(delim, 0, m.start()) for delim in ".;:"),
-            default=-1,
-        )
+        left = _find_clause_boundary_left(line, m.start())
         start = left + 1  # char after the boundary (or 0 when none found → -1+1)
-        right_candidates = [pos for delim in ".;:" if (pos := line.find(delim, m.end())) != -1]
-        end = min(right_candidates) if right_candidates else len(line)
+        end = _find_clause_boundary_right(line, m.end())
         excerpt = line[start:end].strip().rstrip(".,:;")
         return excerpt
     return None

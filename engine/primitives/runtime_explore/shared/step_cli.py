@@ -9,7 +9,10 @@ at a time through THIS CLI (via the ``Bash`` tool), reasoning over each observat
     python -m primitives.runtime_explore.shared.step_cli fill <selector> <value> …
     python -m primitives.runtime_explore.shared.step_cli click <selector> …
     python -m primitives.runtime_explore.shared.step_cli submit <selector> …
-    python -m primitives.runtime_explore.shared.step_cli snapshot …
+    python -m primitives.runtime_explore.shared.step_cli snapshot [--label <slug>] …
+    python -m primitives.runtime_explore.shared.step_cli read <selector> [--by …] …
+    python -m primitives.runtime_explore.shared.step_cli controls detect …
+    python -m primitives.runtime_explore.shared.step_cli controls auto-exercise …
     python -m primitives.runtime_explore.shared.step_cli session end …
 
 Each invocation is its own process, so the browser session is **persisted across
@@ -17,6 +20,22 @@ invocations** via a Playwright ``storageState`` + a ``current_url`` marker under
 state dir. A ``snapshot`` records the current screen into ``crawl-graph.json`` with
 ``reached_via="agent"`` so Phase C sees the agent-reached screens. Every ``goto`` is
 scope-checked (out-of-scope → exit 3). Missing Playwright → exit 6.
+
+New in #1599:
+* ``snapshot --label <slug>`` — a LABELED screenshot uses the filename
+  ``<route>__<label>__<id>.png`` and prints the ref on stdout.  Without ``--label``
+  the behavior is byte-identical to the pre-#1599 form.
+* ``read <selector> [--by …]`` — prints the visible text content of the matched
+  region; the agent diffs before/after to populate ``data_state_change``.
+* ``controls detect`` — runs ``detect_controls`` on the current page and prints the
+  inventory as a JSON array of Control dicts.
+* ``controls auto-exercise`` — mechanically exercises TRIVIAL-kind controls
+  (``sort`` / ``dropdown``) from ``detect_controls``: captures a labeled snapshot +
+  reads the affected region text before and after, then emits a JSON array of Control
+  records with ``exercised_by="auto"`` and the populated ``data_state_change``.  Only
+  sort/dropdown are auto-exercised; filter/edit/modal are left for the harness.  Any
+  navigation-changing exercise re-checks URL-scope containment via the same
+  ``url_in_scope`` guard the goto/crawler use.
 """
 
 from __future__ import annotations
@@ -262,11 +281,41 @@ def _extract_forms(page: Any) -> tuple[Form, ...]:
     return tuple(forms)
 
 
+def _capture_labeled_screenshot(
+    out_dir: Path, page: Any, screen_id: str, url: str, label: str
+) -> str:
+    """Capture a labeled screenshot and return its ``screenshots/<name>`` ref (or ``""``).
+
+    The filename is ``<route>__<label>__<screen_id>.png`` — distinct from the plain
+    route-named shot so a screen can accumulate MULTIPLE labeled shots without collision.
+    Capture is best-effort: a failure returns ``""`` (never aborts).
+    """
+    shots_dir = out_dir / "screenshots"
+    shots_dir.mkdir(parents=True, exist_ok=True)
+    shot = shots_dir / screenshot_name(screen_id, url, label=label)
+    try:
+        page.screenshot(path=str(shot))
+        return f"screenshots/{shot.name}"
+    except Exception:  # noqa: BLE001 - best-effort, matches the crawler
+        return ""
+
+
 def _append_agent_screen(
-    state_dir: Path, out_dir: Path, page: Any, url: str, title: str, forms: tuple[Form, ...]
-) -> None:
+    state_dir: Path,
+    out_dir: Path,
+    page: Any,
+    url: str,
+    title: str,
+    forms: tuple[Form, ...],
+    label: str | None = None,
+) -> str:
     """Add an agent-reached screen to crawl-graph.json (idempotent by url) and capture a
-    route-named screenshot into ``out_dir/screenshots/`` (parity with Phase A)."""
+    route-named screenshot into ``out_dir/screenshots/`` (parity with Phase A).
+
+    When *label* is given the screenshot filename becomes
+    ``<route>__<label>__<id>.png`` and the ref is also printed on stdout so the
+    harness can stash it.  Returns the screenshot ref (``"screenshots/…"`` or ``""``).
+    """
     graph_path = state_dir / "crawl-graph.json"
     if graph_path.is_file():
         graph = CrawlGraph.model_validate(json.loads(graph_path.read_text(encoding="utf-8")))
@@ -274,12 +323,19 @@ def _append_agent_screen(
         graph = CrawlGraph()
     existing = {s.url for s in graph.screens}
     if url in existing:
-        return
+        # The screen is already recorded — still capture a NEW labeled shot if requested.
+        if label:
+            existing_screen = next(s for s in graph.screens if s.url == url)
+            ref = _capture_labeled_screenshot(out_dir, page, existing_screen.id, url, label)
+            if ref:
+                print(ref)
+            return ref
+        return ""
     # Compute the id once so the screenshot filename's id-suffix matches the graph.
     sid = f"AGT-{len(graph.screens) + 1:03d}"
     shots_dir = out_dir / "screenshots"
     shots_dir.mkdir(parents=True, exist_ok=True)
-    shot = shots_dir / screenshot_name(sid, url)
+    shot = shots_dir / screenshot_name(sid, url, label=label)
     try:
         page.screenshot(path=str(shot))
         shot_ref = f"screenshots/{shot.name}"
@@ -293,6 +349,9 @@ def _append_agent_screen(
         graph_path,
         json.dumps(updated.model_dump(mode="json", by_alias=True), indent=2) + "\n",
     )
+    if label and shot_ref:
+        print(shot_ref)
+    return shot_ref
 
 
 def _observe(page: Any) -> str:
@@ -483,7 +542,128 @@ def _validate_pre_launch(verb: str, args: argparse.Namespace, plan: ExplorePlan)
     return _PreLaunch()
 
 
-def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:
+def _read_region_text(page: Any, selector: str) -> str:
+    """Return the inner-text of the first element matching *selector*, or ``""``."""
+    try:
+        loc = page.locator(selector)
+        return loc.inner_text() or ""
+    except Exception:  # noqa: BLE001 - best-effort
+        return ""
+
+
+def _auto_exercise_controls(state_dir: Path, out_dir: Path, page: Any, plan: ExplorePlan) -> None:
+    """Mechanically exercise TRIVIAL-kind controls (sort + dropdown) on the current page.
+
+    For each exercisable control:
+    1. Capture the *before* text of the nearest data-table / list region.
+    2. Exercise the control (click a sort header / select the first non-selected option).
+    3. Capture the *after* text.
+    4. Emit a Control record (``exercised_by="auto"``) with the before→after delta.
+
+    **Pagination controls are navigation-changing** — every post-click URL is scope-checked
+    via ``url_in_scope``; an off-scope URL is refused (the control is emitted with
+    ``data_state_change="SCOPE_REFUSED"`` and the page is navigated back).
+
+    The full list of exercised Control records is printed as a JSON array on stdout.
+    Filter / edit / modal / checkbox / radio / button / other kinds are NOT auto-exercised
+    (left for the agent-driven Phase B).
+    """
+    from primitives.runtime_explore.shared.controls import detect_controls  # noqa: PLC0415
+
+    url = page.url.split("#", 1)[0]
+    # Derive the screen-id from the crawl-graph so the labeled shots share the same id.
+    graph_path = state_dir / "crawl-graph.json"
+    if graph_path.is_file():
+        graph = CrawlGraph.model_validate(json.loads(graph_path.read_text(encoding="utf-8")))
+        match = next((s for s in graph.screens if s.url == url), None)
+        sid = match.id if match else "AGT-AUTO"
+    else:
+        sid = "AGT-AUTO"
+
+    controls_found = detect_controls(page)
+    exercised: list[Any] = []
+
+    for ctl in controls_found:
+        if ctl.kind not in ("sort", "dropdown"):
+            continue
+
+        # --- before text: try the closest table/list parent as the affected region ---
+        try:
+            el = page.locator(ctl.selector).first
+            # Walk up to find the nearest <table>, <ul>, <ol>, or <tbody>
+            _js = (
+                "e => {"
+                "  let n = e;"
+                "  const TAGS = ['TABLE','TBODY','UL','OL'];"
+                "  while (n && !TAGS.includes(n.tagName)) n = n.parentElement;"
+                "  if (!n) return null;"
+                "  const id = n.id ? '#' + n.id : null;"
+                "  const cls = n.classList[0]"
+                "    ? n.tagName.toLowerCase() + '.' + n.classList[0] : null;"
+                "  return id || cls || n.tagName.toLowerCase();"
+                "}"
+            )
+            region_sel = el.evaluate(_js) or ""
+        except Exception:  # noqa: BLE001
+            region_sel = ""
+
+        before_text = _read_region_text(page, region_sel) if region_sel else ""
+
+        # --- exercise ---
+        pre_url = page.url.split("#", 1)[0]
+        data_state_change = ""
+        label_slug = ctl.label.lower().replace(" ", "-")[:20] if ctl.label else ctl.kind
+        shot_ref = ""
+        try:
+            if ctl.kind == "sort":
+                page.locator(ctl.selector).first.click()
+            elif ctl.kind == "dropdown":
+                # Select the first option that is NOT currently selected.
+                _opts_js = (
+                    "el => Array.from(el.options || [])"
+                    ".map((o, i) => ({v: o.value, sel: o.selected, i}))"
+                )
+                opts = page.locator(ctl.selector).first.evaluate(_opts_js)
+                unselected = [o for o in (opts or []) if not o.get("sel")]
+                if unselected:
+                    page.locator(ctl.selector).first.select_option(value=str(unselected[0]["v"]))
+                else:
+                    # All options selected or single-option dropdown — skip.
+                    continue
+
+            # Scope-check the post-exercise URL (navigation-changing controls).
+            post_url = page.url.split("#", 1)[0]
+            if post_url != pre_url and not url_in_scope(post_url, plan.url_scope):
+                # Navigate back and record the refusal.
+                page.go_back()
+                data_state_change = "SCOPE_REFUSED"
+            else:
+                after_text = _read_region_text(page, region_sel) if region_sel else ""
+                data_state_change = (
+                    f"before={before_text[:200]!r} after={after_text[:200]!r}"
+                    if before_text != after_text
+                    else "(no visible data change detected)"
+                )
+                # Labeled screenshot AFTER exercising.
+                shot_ref = _capture_labeled_screenshot(out_dir, page, sid, url, label_slug)
+
+        except Exception as exc:  # noqa: BLE001 - exercise is best-effort
+            data_state_change = f"ERROR: {exc}"
+
+        exercised.append(
+            ctl.model_copy(
+                update={
+                    "exercised_by": "auto",
+                    "data_state_change": data_state_change,
+                    "screenshot": shot_ref,
+                }
+            )
+        )
+
+    print(json.dumps([c.model_dump(mode="json") for c in exercised], indent=2))
+
+
+def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:  # noqa: PLR0912
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
     storage, _ = _state_files(state_dir)
@@ -579,6 +759,7 @@ def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:
                     return 1
 
             if verb == "snapshot":
+                label = getattr(args, "label", None)
                 _append_agent_screen(
                     state_dir,
                     out_dir,
@@ -586,9 +767,30 @@ def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:
                     page.url.split("#", 1)[0],
                     page.title(),
                     _extract_forms(page),
+                    label=label,
                 )
 
-            print(_observe(page))
+            elif verb == "read":
+                loc = _resolve_locator(page, args.selector, args.by, args.nth)
+                try:
+                    text = loc.inner_text()
+                    print(text or "")
+                except Exception:  # noqa: BLE001 - best-effort; missing element → empty
+                    print("")
+
+            elif verb == "controls" and args.action == "detect":
+                from primitives.runtime_explore.shared.controls import (  # noqa: PLC0415
+                    detect_controls,
+                )
+
+                controls_found = detect_controls(page)
+                print(json.dumps([c.model_dump(mode="json") for c in controls_found], indent=2))
+
+            elif verb == "controls" and args.action == "auto-exercise":
+                _auto_exercise_controls(state_dir, out_dir, page, plan)
+
+            if verb not in ("read", "controls"):
+                print(_observe(page))
             context.storage_state(path=str(storage))
             _save_marker(state_dir, {"current_url": page.url})
         finally:
@@ -674,6 +876,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "--out",
         default=None,
         help="context dir for screenshots (default: the --state-dir's parent)",
+    )
+    snap.add_argument(
+        "--label",
+        default=None,
+        help=(
+            "optional label slug for a NAMED screenshot (#1599); "
+            "filename becomes <route>__<label>__<id>.png.  "
+            "Without --label behavior is byte-identical to the pre-#1599 form."
+        ),
+    )
+    # read — print the visible text content of a page region so before/after can be diffed.
+    rd = sub.add_parser("read", parents=[common, targeting])
+    rd.add_argument("selector", help="CSS selector (or --by strategy target) of the region to read")
+    # controls detect / controls auto-exercise — per-control evidence (#1599).
+    ctrl = sub.add_parser("controls", parents=[common])
+    ctrl.add_argument(
+        "action",
+        choices=["detect", "auto-exercise"],
+        help="detect: print the control inventory as JSON; auto-exercise: exercise trivials",
+    )
+    ctrl.add_argument(
+        "--out",
+        default=None,
+        help="context dir for labeled screenshots (default: the --state-dir's parent)",
     )
     se = sub.add_parser("session", parents=[common])
     se.add_argument("action", choices=["start", "end"])

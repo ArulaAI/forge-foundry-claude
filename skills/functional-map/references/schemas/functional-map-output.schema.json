@@ -55,6 +55,10 @@
           },
           "line": {
             "type": "integer"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable page/feature label derived from static signals (view name, route name, or handler label). Empty string when no clean label is derivable (#1606 F1)."
           }
         }
       }
@@ -112,7 +116,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^FR-[0-9]+$"
+            "pattern": "^CAP-[0-9]+$"
           },
           "action": {
             "type": "string"
@@ -273,6 +277,32 @@
               "validation", "display_rule", "access_control", "audit", "notification",
               "pagination", "file_upload", "concurrency", "session", "async", "functional"
             ]
+          },
+          "source_evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "context": {
+            "type": "string",
+            "description": "Optional bounded-context slug assigned by the harness during synthesis (#1595). Empty string means 'let slicing infer'."
+          }
+        }
+      }
+    },
+    "needs_context_assignment": {
+      "type": "array",
+      "description": "FRs present in the whole-app map that could not be routed to any bounded-context slice (#1595 no-drop invariant).",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FR-[0-9]+$"
+          },
+          "statement": {
+            "type": "string"
           },
           "source_evidence": {
             "type": "array",

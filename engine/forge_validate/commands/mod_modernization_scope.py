@@ -100,6 +100,18 @@ from primitives.modernization_scope.shared.pipeline import ArtifactMissingError,
         "its bounded context(s) and re-invokes with the resolved --context (#1542)."
     ),
 )
+@click.option(
+    "--feature-label",
+    "feature_label",
+    default="",
+    help=(
+        "Plain-English feature name to use as the spec/BRD/ADR display title when the "
+        "SKILL body resolved a --feature to a bounded context and re-invokes with "
+        "--context (#1609). When set, every in-scope spec is titled "
+        "'<label> — Modernization Specification' while the spec_id/filename stays the "
+        "context slug. Absent (empty string) → output is byte-identical to today."
+    ),
+)
 @click.option("--no-synthesis", is_flag=True, default=False)
 @click.option(
     "--no-migration-synthesis",
@@ -150,6 +162,7 @@ def mod_modernization_scope(  # noqa: PLR0913 — the documented CLI surface (SP
     hla_path: Path | None,
     context_scope: tuple[str, ...],
     feature_scope: tuple[str, ...],
+    feature_label: str,
     no_synthesis: bool,
     no_migration_synthesis: bool,
     extract_only: bool,
@@ -200,6 +213,7 @@ def mod_modernization_scope(  # noqa: PLR0913 — the documented CLI surface (SP
             extract_only=extract_only,
             continue_path=Path(judgments) if (continue_flag and judgments is not None) else None,
             scope_contexts=scope_contexts,
+            feature_label=feature_label,
             repo_set=repo_set if repo_set.entries else None,
             modernized_overrides=set(modernized_overrides),
         )
