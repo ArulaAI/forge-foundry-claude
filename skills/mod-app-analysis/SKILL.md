@@ -66,10 +66,17 @@ citation-validated `ANALYSIS.md`.
 2. **Run the discovery stack via dispatched subagents.** Run each analyzer with
    curated context — do not let any subagent inherit this session's history:
 
-   a. **`/mod-playbook-discovery`** against the repo root. Pass
-      `--no-synthesis` so the extract leg is deterministic (no model round-trip
-      needed here — the synthesis narrative is not required by the digest).
-      Expect `PLAYBOOK.md` and the structured section data under the repo's
+   a. **`/mod-playbook-discovery`** against the repo root. **By default pass
+      `--no-synthesis`** so the extract leg is deterministic (no model round-trip
+      — the synthesis narrative is not required by the app-digest, which is the
+      token-cheap default). **When `--with-playbook-synthesis` was passed to this
+      skill, do NOT pass `--no-synthesis`** — let `/mod-playbook-discovery` run its
+      full synthesis round so its five narrative sections (§1 Executive Summary,
+      §2 System Architecture, §8 Business Rules Catalog, §14 Technical Debt
+      Inventory, §15 Modernization Analysis) are populated rather than
+      `⚠️ UNVERIFIED` stubs. (This is the "fully-synthesized modernization pass"
+      option; it costs a model round-trip here, off by default.) Either way, expect
+      `PLAYBOOK.md` and the structured section data under the repo's
       `.foundry/context/` tree. If this stage fails, emit an error naming the
       stage and stop.
 
@@ -135,7 +142,12 @@ Invoke as `/mod-app-analysis <repo-root>` where `<repo-root>` is the path to
 the source repository to analyze (defaults to the current working directory).
 Pass `--no-functional-map` to skip the `/functional-map` stage even when a
 web tier is detected. Pass `--context-dir PATH` to override the default output
-directory (`.foundry/context/modernization/<repo-name>/`).
+directory (`.foundry/context/modernization/<repo-name>/`). Pass
+`--with-playbook-synthesis` to run the `/mod-playbook-discovery` sub-call **with**
+its synthesis round (populating the playbook's five narrative sections) instead of
+the token-cheap deterministic default — use it for a fully-synthesized
+modernization pass. Absent, the playbook sub-call stays deterministic
+(`--no-synthesis`), byte-identical to prior behavior.
 
 YOU (the harness LLM) drive the discovery stack directly via dispatched
 subagents — there is no Python control-plane to shell out to for the discovery

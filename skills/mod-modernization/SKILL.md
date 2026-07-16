@@ -271,6 +271,16 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    | 4 app-analysis | `/mod-app-analysis` | `modernization/<repo-name>/app-digest.json` |
    | 5 scope | `/mod-modernization-scope` | `modernization/MODERNIZATION.md` (+ system-map.json, scope/, adr/, ROADMAP.md) |
 
+   **Full-synthesis pass (`--full-synthesis`).** Every stage that supports a synthesis
+   round runs it by default (functional-map, db-schema, api-contract, and the scope
+   stage) — EXCEPT stage 4's `/mod-app-analysis`, which runs its own
+   `/mod-playbook-discovery` sub-call token-cheaply (`--no-synthesis`) since the
+   app-digest doesn't need the playbook narrative. When the user passes
+   **`--full-synthesis`**, thread **`--with-playbook-synthesis`** into the stage-4
+   `/mod-app-analysis <repo> --with-playbook-synthesis` invocation so the playbook's
+   narrative sections are synthesized too — a genuinely end-to-end fully-synthesized
+   pass. Absent `--full-synthesis`, the chain is byte-identical to prior behavior.
+
    After each stage runs, **persist** its outcome to `state.json` under
    `stages.<stage-id>` as `{status, note, artifact}` where `status` is one of
    `complete` (artifact written), `failed` (ran but errored), or `skipped` (not
