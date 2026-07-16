@@ -30,6 +30,8 @@ from typing import TYPE_CHECKING, NamedTuple
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from primitives._shared.modernization.delta import MigrationDelta
+
 # ---------------------------------------------------------------------------
 # Constants / helpers
 # ---------------------------------------------------------------------------
@@ -734,3 +736,61 @@ def traceability_matrix(rows: Sequence[TraceRow]) -> str:
         t_str = ", ".join(row.tests) if row.tests else "—"
         table_rows.append([row.requirement, ac_str, t_str])
     return md_table(headers, table_rows)
+
+
+# ---------------------------------------------------------------------------
+# Twin-repo migration-delta renderer (D4, #1630)
+# ---------------------------------------------------------------------------
+
+
+def render_migration_delta(delta: MigrationDelta) -> str:
+    """Render a **What's Left** Markdown section from a :class:`MigrationDelta`.
+
+    One paragraph per legacy bounded context:
+
+    * **Fully rebuilt** (all endpoints + entities present-complete) →
+      ``<Context> — fully rebuilt (Boundary Contract)``.
+    * **Partial** → ``<Context> — X of Y rebuilt; N remain: ep1, ep2, …``.
+    * **Absent** (nothing rebuilt) → ``<Context> — 0 of Y rebuilt; Y remain: …``.
+
+    Returns an empty string when *delta* has no contexts (nothing to show),
+    so callers can gate embedding on truthiness.
+
+    Pure and deterministic — no LLM, no I/O.
+    """
+    if not delta.contexts:
+        return ""
+
+    lines: list[str] = ["## What's Left\n"]
+
+    for ctx in delta.contexts:
+        # Collect all items (endpoints + entities) and classify them.
+        all_items: list[tuple[str, str]] = []  # (label, disposition)
+        for ep in ctx.endpoints:
+            all_items.append((ep.legacy, ep.disposition))
+        for ent in ctx.entities:
+            all_items.append((ent.legacy, ent.disposition))
+
+        total = len(all_items)
+        rebuilt = sum(1 for _, disp in all_items if disp == "present-complete")
+        remaining = [(label, disp) for label, disp in all_items if disp != "present-complete"]
+
+        if total == 0:
+            # No items at all — context is a name-only match; render as absent.
+            lines.append(f"- **{ctx.context}** — no endpoints or entities catalogued\n")
+            continue
+
+        if rebuilt == total:
+            # Fully rebuilt → Boundary Contract
+            lines.append(
+                f"- **{ctx.context}** — {rebuilt} of {total} rebuilt"
+                f" **(Boundary Contract: integrate against, do not rebuild)**\n"
+            )
+        else:
+            residual_labels = ", ".join(label for label, _ in remaining)
+            lines.append(
+                f"- **{ctx.context}** — {rebuilt} of {total} rebuilt;"
+                f" {len(remaining)} remain: {residual_labels}\n"
+            )
+
+    return "\n".join(lines)

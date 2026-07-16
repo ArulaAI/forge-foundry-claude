@@ -355,6 +355,61 @@ the extract leg additionally scores each repo's on-disk tree for framework-gener
   deterministic scorer decided it (uncertain → the honesty-rule `legacy` / `low`,
   `source: "deterministic"`), no migration prompts, no exit-7-for-migration handshake.
 
+## Twin-repo delta analysis (D4, #1630)
+
+When the operator has a **partially-modernized rewrite repo alongside the legacy monolith**, pass
+both to auto-derive what's-left-to-modernize at **endpoint / entity granularity** — no manual
+`--modernized` list needed:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-scope \
+  --code-root ../legacy/src \
+  --legacy ../legacy \
+  --twin-target ../rewrite
+```
+
+`--legacy` is the legacy monolith root; `--twin-target` is the in-progress rewrite root. Both must
+be existing directories. Both-or-neither rule: supplying only one is an error.
+
+**What the pipeline does (deterministic, no LLM):**
+
+```mermaid
+flowchart TD
+    A["--legacy + --twin-target"] --> B["build digests from legacy artifacts"]
+    B --> C["correlate_contexts — pair legacy↔target bounded contexts"]
+    C --> D["assess_delta — classify each endpoint/entity\nas present-complete / absent"]
+    D --> E["delta_to_states → MigrationStates"]
+    E --> F["write migration-delta.json to output-dir"]
+    F --> G["resolve_whats_left — modern_units = fully-rebuilt contexts"]
+    G --> H["sequencer.order(skip_units=modern_units)"]
+    H --> I["Roadmap sequences only residual work"]
+```
+
+1. **Correlate** — `correlate_contexts` pairs each legacy bounded context to the best-matching
+   target context using a layered banded match (exact route match → `high`; normalized rename
+   match → `high`/`medium`; token-overlap → `medium`; no match → `low`/unmatched).
+2. **Assess** — `assess_delta` classifies every legacy endpoint + entity:
+   - `present-complete` — a matching endpoint/entity exists in the target.
+   - `absent` — nothing in the target matches (must still be migrated).
+3. **Roll up** — `delta_to_states` converts per-context dispositions to the existing
+   `ConfirmedMigrationState` vocabulary:
+   - All `present-complete` → `modern` / `deterministic` → **Boundary Contract** (skip from roadmap).
+   - Mixed → `partial` / `deterministic` → scoped IN with residual endpoints listed.
+   - Nothing complete → `legacy` / `deterministic` → fully scoped IN.
+   - `low` match confidence → `unverified` (no context match found; harness must confirm).
+4. **Write** — `migration-delta.json` is written durably to the output directory — the
+   auditable source of truth for this run's endpoint/entity disposition.
+5. **Render** — on the continue leg, a **What's Left** section is appended to `MODERNIZATION.md`
+   listing each context's rebuilt count + residual endpoints (or "Boundary Contract" if fully done).
+
+**INVARIANT:** every legacy endpoint/entity appears exactly once in `migration-delta.json` —
+no silent drop. `--legacy`/`--twin-target` absent → no `migration-delta.json` written,
+byte-identical to today's run (#1630 additive invariant).
+
+**`--feature` composes:** when `--context` is also passed (from a `--feature` resolution), the
+delta is scoped to the requested bounded context — only that context's residual endpoints appear
+in the "What's Left" section.
+
 ## What's-left-to-modernize scope filter (MR5, #1554)
 
 The continue leg uses the confirmed `migration-states.json` to filter the roadmap to **only the

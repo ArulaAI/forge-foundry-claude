@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import yaml
 from pydantic import ValidationError
 
-from primitives._shared.modernization.models import RepoEntry, RepoSet
+from primitives._shared.modernization.models import RepoEntry, RepoSet, TwinRepoPair
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -158,3 +158,74 @@ def build_repo_set(project_root: Path, repo_overrides: tuple[str, ...]) -> RepoS
         entries_by_role[role] = entry
 
     return RepoSet(entries=tuple(entries_by_role.values()))
+
+
+# ---------------------------------------------------------------------------
+# Twin-repo pairing — SEC-7 validated (D1, #1629)
+# ---------------------------------------------------------------------------
+
+
+def _safe_repo_path(raw: str, project_root: Path) -> str:
+    """SEC-7: validate a raw twin-repo path and return the resolved absolute path.
+
+    Mirrors :func:`_reject_unsafe_path` / :func:`_validate_repo_dir`: checks the
+    RAW value before ``.resolve()`` so a ``..`` that would survive normalization is
+    still caught at parse time.
+
+    Args:
+        raw: The raw path string (CLI argument value).
+        project_root: Project root — relative paths are resolved against this.
+
+    Returns:
+        The resolved absolute path string (``str(resolved)``).
+
+    Raises:
+        ValueError: If ``raw`` starts with ``'-'`` (flag injection), contains a
+            ``..`` segment (path traversal), or the resolved path is not an
+            existing directory.
+    """
+    if raw.startswith("-"):
+        raise ValueError(f"repo path may not start with '-': {raw!r}")
+    if ".." in raw.replace("\\", "/").split("/"):
+        raise ValueError(f"repo path may not contain '..': {raw!r}")
+    resolved = (project_root / raw).resolve()
+    if not resolved.is_dir():
+        raise ValueError(f"repo path does not resolve to a directory: {raw!r}")
+    return str(resolved)
+
+
+def parse_twin_repo(
+    legacy: str | None,
+    target: str | None,
+    project_root: Path,
+) -> TwinRepoPair | None:
+    """Parse and SEC-7-validate the twin-repo ``--legacy``/``--target`` pair (D1, #1629).
+
+    Both arguments must be provided together (both-or-neither rule). When both
+    are ``None`` the function returns ``None`` and the pipeline is byte-identical
+    to today's single-repo / multi-repo behaviour (additive invariant).
+
+    Args:
+        legacy: Raw path to the legacy monolith repository (CLI ``--legacy``), or
+            ``None`` when the option was not supplied.
+        target: Raw path to the target (rewrite) repository (CLI ``--target``), or
+            ``None`` when the option was not supplied.
+        project_root: Project root used to resolve relative paths.
+
+    Returns:
+        A :class:`~primitives._shared.modernization.models.TwinRepoPair` with
+        resolved absolute path strings, or ``None`` when both arguments are absent.
+
+    Raises:
+        ValueError: If only one of *legacy* / *target* is provided, or if either
+            path fails the SEC-7 guard (leading ``-``, ``..`` segment, or not an
+            existing directory).
+    """
+    if legacy is None and target is None:
+        return None
+    if not (legacy and target):
+        raise ValueError("--legacy and --target must be provided together")
+    return TwinRepoPair(
+        legacy=_safe_repo_path(legacy, project_root),
+        target=_safe_repo_path(target, project_root),
+    )

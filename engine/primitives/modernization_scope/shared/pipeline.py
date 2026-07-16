@@ -41,12 +41,14 @@ from primitives._shared.modernization.adapters import (
     runtime_journeys_to_flows,
 )
 from primitives._shared.modernization.brd import render_brd
+from primitives._shared.modernization.completeness_assessor import assess_delta
 from primitives._shared.modernization.context_resolver import (
     build_member_index,
     resolve_context,
 )
 from primitives._shared.modernization.correlate import build_system_map
 from primitives._shared.modernization.deconstruct import render_deconstruction
+from primitives._shared.modernization.delta import MigrationDelta, delta_to_states
 from primitives._shared.modernization.evidence import (
     ConfirmedMigrationState,
     MigrationEvidence,
@@ -65,10 +67,12 @@ from primitives._shared.modernization.models import (
     RepoSet,
     SystemMap,
     SystemMapEdge,
+    TwinRepoPair,
 )
 from primitives._shared.modernization.refcheck import RefCheckReport
 from primitives._shared.modernization.refcheck import check as refcheck_check
-from primitives._shared.modernization.render import heading, md_table
+from primitives._shared.modernization.render import heading, md_table, render_migration_delta
+from primitives._shared.modernization.same_app_correlator import correlate_contexts
 from primitives._shared.modernization.scope import (
     render_adr,
     render_spec,
@@ -626,6 +630,96 @@ def build_system_map_from_repo_set(
     # MR6 (#1555): draw ``provisions`` edges from IaC nodes to the app/db units they
     # provision (Option A post-correlate enrichment). No IaC digests → byte-identical.
     return attach_provision_edges(system_map, iac_digests, generated_at=generated_at)
+
+
+# ---------------------------------------------------------------------------
+# Twin-repo delta pipeline (D4, #1630)
+# ---------------------------------------------------------------------------
+
+
+def _context_to_code_root_from_digests(
+    digests: list[ModernizationDigest],
+) -> dict[str, str]:
+    """Build a {context_label: code_root} index from a digest list.
+
+    When a digest has no ``domains`` we fall back to ``code_root`` as the
+    label — mirroring the correlator's ``_exposed_by_context`` helper.
+    """
+    out: dict[str, str] = {}
+    for d in digests:
+        labels = d.domains if d.domains else [d.code_root]
+        for label in labels:
+            # First entry wins (deterministic — multiple digests for the same
+            # domain use the first code_root seen).
+            if label not in out:
+                out[label] = d.code_root
+    return out
+
+
+def _run_twin_repo_delta(
+    pair: TwinRepoPair,
+    *,
+    legacy_digests: list[ModernizationDigest],
+    target_digests: list[ModernizationDigest],
+    output_dir: Path,
+) -> tuple[MigrationDelta, MigrationStates]:
+    """Run the twin-repo delta pipeline and write ``migration-delta.json``.
+
+    Executes the full chain::
+
+        correlate_contexts(legacy, target)
+            → assess_delta(pairings, legacy, target)
+            → delta_to_states(delta, context_to_code_root)
+            → write migration-delta.json
+
+    The returned :class:`MigrationStates` is fed into the existing
+    ``resolve_whats_left`` → ``sequencer.order(skip_units=)`` path so
+    fully-rebuilt contexts are demoted to Boundary Contracts and the roadmap
+    sequences only the residual.
+
+    Low-confidence contexts (``match_confidence="low"``) flow through as
+    ``source="unverified"`` — they are NOT skipped from the roadmap (scoped IN
+    with a ⚠️ marker), mirroring the existing MR4 unverified handling.
+
+    Args:
+        pair: Validated :class:`TwinRepoPair` (from ``parse_twin_repo``).
+        legacy_digests: Digests built from the legacy repo's analysis artifacts.
+        target_digests: Digests built from the target (rewrite) repo's analysis artifacts.
+        output_dir: The MODERNIZATION output directory; ``migration-delta.json``
+            is written here as a durable, auditable artifact.
+
+    Returns:
+        ``(delta, states)`` — the :class:`MigrationDelta` (written to disk) and
+        the derived :class:`MigrationStates` ready for ``resolve_whats_left``.
+    """
+    # Step 1: pair legacy↔target bounded contexts.
+    pairings = correlate_contexts(legacy_digests, target_digests)
+
+    # Step 2: classify every legacy endpoint/entity as present-complete or absent.
+    delta = assess_delta(
+        pairings,
+        legacy_digests,
+        target_digests,
+        legacy_repo=pair.legacy,
+        target_repo=pair.target,
+    )
+
+    # Step 3: build a context → code_root map for the roll-up step.
+    context_to_code_root = _context_to_code_root_from_digests(legacy_digests)
+
+    # Step 4: roll up to ConfirmedMigrationStates (modern/partial/legacy/unverified).
+    states = delta_to_states(delta, context_to_code_root)
+
+    # Step 5: write migration-delta.json durably (auditable source of truth).
+    output_dir.mkdir(parents=True, exist_ok=True)
+    delta_path = output_dir / "migration-delta.json"
+    delta_path.write_text(
+        delta.model_dump_json(indent=2, exclude_none=True),
+        encoding="utf-8",
+    )
+    _LOG.info("mod-modernization-scope: twin-repo delta written to %s", delta_path)
+
+    return delta, states
 
 
 # ---------------------------------------------------------------------------
@@ -2954,7 +3048,7 @@ def load_hla(
 # ---------------------------------------------------------------------------
 
 
-def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5)
+def run(  # noqa: PLR0912, PLR0913, PLR0915 — the documented pipeline surface (SPEC §5)
     code_root: Path,
     context_root: Path,
     *,
@@ -2977,6 +3071,7 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
     feature_label: str = "",
     repo_set: RepoSet | None = None,
     modernized_overrides: set[str] | None = None,
+    twin_pair: TwinRepoPair | None = None,
 ) -> PipelineResult:
     """Run the synthesizer.
 
@@ -3154,6 +3249,23 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
         # Empty when no modern units (byte-identical, nothing appended).
         modern_boundary = render_modernized_boundary_section(system_map, whats_left.modern_units)
         boundary = boundary + modern_boundary
+        # D4 (#1630): append the twin-repo "What's Left" delta section when a
+        # migration-delta.json exists from the extract leg.  Omitted when absent
+        # (byte-identical single-repo invariant).
+        delta_path = output_dir / "migration-delta.json"
+        if delta_path.is_file():
+            try:
+                delta_obj = MigrationDelta.model_validate_json(
+                    delta_path.read_text(encoding="utf-8")
+                )
+                delta_section = render_migration_delta(delta_obj)
+                if delta_section:
+                    boundary = boundary + "\n" + delta_section
+            except Exception:  # noqa: BLE001
+                _LOG.warning(
+                    "mod-modernization-scope: migration-delta.json could not be parsed — "
+                    "skipping delta section in MODERNIZATION.md"
+                )
         if boundary:
             mod_path = output_dir / "MODERNIZATION.md"
             if mod_path.is_file():
@@ -3187,6 +3299,7 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
     # written (the #1408 additive invariant).
     migration_states: list[ConfirmedMigrationState] = []
     migration_prompts: list[dict[str, Any]] = []
+    twin_migration_states: MigrationStates | None = None
     if repo_set is not None and repo_set.entries:
         # Multi-repo (MR2, #1551): the system-map correlates every repo's
         # per-repo artifacts into cross-repo edges. The FR bundle above still
@@ -3209,6 +3322,42 @@ def run(  # noqa: PLR0913, PLR0915 — the documented pipeline surface (SPEC §5
         system_map = build_system_map_from_artifacts(
             artifacts, code_root=str(code_root), generated_at=generated_at
         )
+
+    # D4 (#1630): twin-repo delta pipeline — gated on the TwinRepoPair being present.
+    # ADDITIVE INVARIANT: absent twin_pair → no migration-delta.json written, no behavior
+    # change (byte-identical to today's single-repo / multi-repo runs).
+    if twin_pair is not None:
+        # Build minimal digests from the already-discovered artifacts for both repos.
+        # The existing system-map (built above from the primary code_root's artifacts)
+        # stays unchanged — the twin-repo delta is an ADDITIONAL layer that derives
+        # migration-states at endpoint/entity granularity.
+        # We build digests from the DISCOVERED artifacts (they carry the domains /
+        # exposed_interfaces / key_entities needed by the correlator + assessor).
+        legacy_digests = build_digests(artifacts, code_root=str(code_root))
+        # For the target repo: look under context_root/modernization/<target-name>/
+        # for its app-digest (the same pattern build_system_map_from_repo_set uses).
+        target_repo_name = Path(twin_pair.target).name
+        target_app_digest_path = _repo_artifact(context_root, target_repo_name, "app-digest.json")
+        target_digests: list[ModernizationDigest] = []
+        if target_app_digest_path is not None:
+            target_digests.append(
+                app_digest_to_digest(
+                    _load(target_app_digest_path),
+                    code_root=f"{twin_pair.target}#app",
+                )
+            )
+        _twin_delta, twin_migration_states = _run_twin_repo_delta(
+            twin_pair,
+            legacy_digests=legacy_digests,
+            target_digests=target_digests,
+            output_dir=output_dir,
+        )
+        # Twin-repo states REPLACE the MR4 evidence-based states for the what's-left
+        # filter.  When both a repo_set AND a twin_pair are present (unusual but valid),
+        # the twin-repo delta takes precedence — it is more granular.
+        if twin_migration_states is not None:
+            migration_states = list(twin_migration_states.states)
+            migration_prompts = []  # deterministic; no harness round for twin-repo
     spec_skeletons = build_spec_skeletons(system_map)
     # F4 (#1609): stamp the display title of the in-scope skeleton(s) with the resolved
     # plain-English feature name. The id/filename stays the context slug (byte-identical
