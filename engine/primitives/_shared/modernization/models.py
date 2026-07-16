@@ -381,3 +381,27 @@ class RepoSet(BaseModel):
             if e.role == role:
                 return e
         return None
+
+
+# ---------------------------------------------------------------------------
+# TwinRepoPair — twin-repo pairing for delta-based modernization (D1, #1629)
+# ---------------------------------------------------------------------------
+
+
+class TwinRepoPair(BaseModel):
+    """A validated pair of legacy + target (rewrite) repository paths (D1, #1629).
+
+    Both paths are SEC-7 validated (no ``..``, no leading ``-``, resolved
+    ``is_dir()``) by :func:`primitives._shared.modernization.repos.parse_twin_repo`
+    before construction; stored as resolved absolute path strings.
+
+    Absent a pair, the scope pipeline is byte-identical to prior behaviour
+    (additive invariant, #1629).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: Resolved absolute path to the legacy monolith repository root.
+    legacy: str
+    #: Resolved absolute path to the target (rewrite) repository root.
+    target: str

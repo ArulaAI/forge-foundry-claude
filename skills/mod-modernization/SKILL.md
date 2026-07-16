@@ -288,6 +288,41 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    - **Absent `--feature`/`--context`** → the whole-app run, **byte-identical** to before
      (the #1408 additive invariant; the golden fixtures are unchanged).
 
+   **Twin-repo delta analysis (`--legacy` / `--twin-target`, D4, #1630).** When the user has
+   a **partially-modernized rewrite repo alongside the legacy monolith**, pass both to
+   auto-derive what's-left-to-modernize at **endpoint / entity granularity**:
+   ```
+   /mod-modernization . --legacy ../legacy --twin-target ../rewrite
+   ```
+   `--legacy` is the legacy monolith root; `--twin-target` is the in-progress rewrite root.
+   Both-or-neither rule (only one supplied → usage error). When present, `/mod-modernization`
+   threads both flags into the stage-5 SP2 scope stage:
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-scope --code-root ... \
+     --legacy ../legacy --twin-target ../rewrite ...
+   ```
+   The scope stage's `_run_twin_repo_delta` pipeline runs **instead of** manual `--modernized`
+   entries — it classifies every legacy endpoint/entity as `present-complete` (rebuilt) or
+   `absent` (must still be migrated), writes `migration-delta.json` to the output directory,
+   and feeds the results into `resolve_whats_left` so fully-rebuilt contexts are automatically
+   demoted to Boundary Contracts and sequenced out of the roadmap.
+
+   The double-analyze flow:
+
+   ```mermaid
+   flowchart TD
+       A["--legacy + --twin-target flags"] --> B["Stages 1–4 run against code-root\n(legacy monolith)"]
+       B --> C["Stage 5 scope: correlate_contexts\nlegacy digests ↔ target digests"]
+       C --> D["assess_delta → classification\npresent-complete / absent per endpoint"]
+       D --> E["delta_to_states → MigrationStates\nmodern / partial / legacy / unverified"]
+       E --> F["migration-delta.json written to output-dir"]
+       F --> G["resolve_whats_left:\nmodern_units = fully-rebuilt contexts"]
+       G --> H["sequencer.order(skip_units=modern_units)\nRoadmap = residual only"]
+   ```
+
+   **No `--legacy`/`--twin-target` supplied → byte-identical** to today's run — no
+   `migration-delta.json`, no behavior change (additive invariant, #1630).
+
 2. **Run each chain stage as a dispatched subagent, persisting to the discovery path.**
    Walk the five stages IN ORDER. For each not-yet-complete stage, dispatch a fresh
    subagent (curate exactly the context it needs — the repo path and, for the scope

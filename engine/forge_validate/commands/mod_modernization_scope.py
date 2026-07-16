@@ -24,7 +24,11 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
-from primitives._shared.modernization.repos import RepoSetParseError, build_repo_set
+from primitives._shared.modernization.repos import (
+    RepoSetParseError,
+    build_repo_set,
+    parse_twin_repo,
+)
 from primitives.modernization_scope.shared.pipeline import ArtifactMissingError, run
 
 
@@ -137,6 +141,28 @@ from primitives.modernization_scope.shared.pipeline import ArtifactMissingError,
     ),
 )
 @click.option(
+    "--legacy",
+    "legacy_repo",
+    default=None,
+    help=(
+        "Path to the legacy monolith repository (D1, #1629). "
+        "When provided together with --twin-target, enables twin-repo delta analysis — "
+        "the pipeline auto-derives what's-left-to-modernize at endpoint/entity granularity "
+        "by comparing the legacy repo against the in-progress rewrite. "
+        "Absent (default) → byte-identical to today's single-repo / multi-repo behaviour."
+    ),
+)
+@click.option(
+    "--twin-target",
+    "twin_target_repo",
+    default=None,
+    help=(
+        "Path to the target (rewrite) repository (D1, #1629). "
+        "Must be provided together with --legacy; both-or-neither rule. "
+        "Absent (default) → byte-identical to today's behaviour."
+    ),
+)
+@click.option(
     "--modernized",
     "modernized_overrides",
     multiple=True,
@@ -169,6 +195,8 @@ def mod_modernization_scope(  # noqa: PLR0913 — the documented CLI surface (SP
     continue_flag: bool,
     judgments: Path | None,
     repo_overrides: tuple[str, ...],
+    legacy_repo: str | None,
+    twin_target_repo: str | None,
     modernized_overrides: tuple[str, ...],
 ) -> None:
     """SP2 — correlate analysis artifacts → deconstruction + specs + ADRs + roadmap."""
@@ -195,6 +223,11 @@ def mod_modernization_scope(  # noqa: PLR0913 — the documented CLI surface (SP
         raise click.UsageError(str(exc)) from exc
 
     try:
+        _twin_pair = parse_twin_repo(legacy_repo, twin_target_repo, Path.cwd())
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    try:
         result = run(
             Path(code_root),
             Path(context_root),
@@ -216,6 +249,7 @@ def mod_modernization_scope(  # noqa: PLR0913 — the documented CLI surface (SP
             feature_label=feature_label,
             repo_set=repo_set if repo_set.entries else None,
             modernized_overrides=set(modernized_overrides),
+            twin_pair=_twin_pair,
         )
     except ArtifactMissingError as exc:
         print(f"error: {exc}", file=sys.stderr)
