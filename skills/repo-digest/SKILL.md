@@ -130,7 +130,11 @@ All five extractors exclude `.venv`, `node_modules`, `__pycache__`, `.git`, buil
 
 - `--produce` writes exactly these 6 files into `.foundry/context/` (or the `--output-dir`
   override):
-  - `repo-digest.md` — project name, language counts, frameworks, purpose, structure
+  - `repo-digest.md` — project name, language counts, a `## LOC by Language` table
+    (line counts), a weighted `## Modules` inventory, frameworks, purpose,
+    structure, and a `## Data Access` section (DB tables from JPA `@Table`/`@Entity`,
+    DDL, and embedded SQL) — the shapes the SP3 `mod-app-analysis` aggregator parses,
+    including the load-bearing `data:<table>` join keys (#1405)
   - `conventions.md` — lint/format configs + test framework + naming patterns
   - `api-surface.md` — exported symbols + OpenAPI specs + CLI commands
   - `entry-points.md` — main()s, HTTP handlers, Lambda handlers, pytest fixtures

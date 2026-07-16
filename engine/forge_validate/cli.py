@@ -42,12 +42,18 @@ __all__ = [
 # Removed (skill-first, archived in PR-B):
 #   plan, code-gen, sdet-architect, threat-model,
 #   cloud-arch-review, frontend-design, slo-author, spec-write
-# (mod-playbook-discovery, mod-modernization-strategist, mod-sp-converter re-registered
+# (mod-playbook-discovery, mod-sql-strategist, mod-sp-converter re-registered
 #  as Python-load-bearing in v3; work-orchestrator re-registered in #971;
 #  test-from-spec re-registered as Python-load-bearing in #1114/#1115 (B2/B3);
-#  mod-legacy-modernization remains skill-first/orchestrator per charter §4.1.)
+#  mod-sql-modernization (M0) remains skill-first/orchestrator per charter §4.1 —
+#  it is an orchestrator with no cli.py command key.)
+# (M0/M3 slash commands renamed to the mod-sql-* namespace in #1326/#1327 (SP5 of
+#  epic #1311): /mod-legacy-modernization → /mod-sql-modernization and
+#  /mod-modernization-strategist → /mod-sql-strategist. Only the CLI command-map
+#  key below changes; the Python module (mod_modernization_strategist) is
+#  unchanged to avoid import/test churn.)
 # (mod-playbook-discovery re-registered in v3 as Python-load-bearing, #641;
-#  mod-modernization-strategist re-registered in v3 as Python-load-bearing, #644;
+#  mod-sql-strategist (M3) re-registered in v3 as Python-load-bearing, #644;
 #  mod-sp-converter re-registered in v3 as Python-load-bearing, #645/#646.)
 _COMMAND_MODULES: Final[dict[str, str]] = {
     "validate": "validate",
@@ -70,10 +76,14 @@ _COMMAND_MODULES: Final[dict[str, str]] = {
     "rules-gen": "rules_gen",
     "mod-db-schema-analyze": "mod_db_schema_analyze",
     "mod-stored-proc-analyze": "mod_stored_proc_analyze",
-    "mod-modernization-strategist": "mod_modernization_strategist",
+    "mod-sql-strategist": "mod_modernization_strategist",
     "mod-sp-converter": "mod_sp_converter",
     "mod-playbook-discovery": "mod_playbook_discovery",
     "mod-synth-logs": "mod_synth_logs",
+    "mod-modernization-scope": "mod_modernization_scope",
+    "modernization-rollup": "modernization_rollup",
+    "red-team-review": "red_team_review",
+    "functional-map": "functional_map",
 }
 
 

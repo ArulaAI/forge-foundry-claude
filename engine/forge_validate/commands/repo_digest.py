@@ -198,7 +198,7 @@ def cli(  # noqa: PLR0913
             target.write_text(content, encoding="utf-8")
             written.append(target)
 
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
         click.echo(f"Wrote {len(written)} digest files to {out}")
         return
 

@@ -147,6 +147,7 @@ def cli(  # noqa: PLR0913
             resolved_state_dir=resolved_state_dir,
             judgments=judgments,  # guaranteed non-None by validate_skill_first_flags
             skip_ai_quality=skip_ai_quality,
+            explicit=(state_dir is not None),
         )
         return
 
@@ -377,6 +378,7 @@ def _run_continue(  # noqa: PLR0913
     resolved_state_dir: Path,
     judgments: str | None,
     skip_ai_quality: bool,
+    explicit: bool = False,
 ) -> None:
     """Execute the --continue branch (apply judgments, emit round-2 prompts or render)."""
     from primitives._shared.pipeline_state import (  # noqa: PLC0415
@@ -388,6 +390,7 @@ def _run_continue(  # noqa: PLR0913
     )
     from primitives._shared.protocol import (  # noqa: PLC0415
         PromptEnvelope,
+        assert_matching_round,
         read_judgments,
         write_prompts,
     )
@@ -410,6 +413,9 @@ def _run_continue(  # noqa: PLR0913
 
     assert judgments is not None  # guaranteed by validate_skill_first_flags
     judgment_envelope = read_judgments(Path(judgments))
+    # Reject a stale prior-round judgments file rather than silently finalizing
+    # and dropping the pending round (#1199).
+    assert_matching_round(judgment_envelope, pipeline.round, path=Path(judgments))
     judgment_map = judgment_envelope.by_id()
 
     # ------------------------------------------------------------------
@@ -494,6 +500,7 @@ def _run_continue(  # noqa: PLR0913
                 max_severity=max_severity,
                 resolved_state_dir=resolved_state_dir,
                 skip_ai_quality=skip_ai_quality,
+                explicit=explicit,
             )
             return
 
@@ -542,6 +549,7 @@ def _run_continue(  # noqa: PLR0913
             max_severity=max_severity,
             resolved_state_dir=resolved_state_dir,
             skip_ai_quality=skip_ai_quality,
+            explicit=explicit,
         )
 
 
@@ -558,6 +566,7 @@ def _render_and_exit(  # noqa: PLR0913
     max_severity: str | None,
     resolved_state_dir: Path,
     skip_ai_quality: bool,
+    explicit: bool = False,
 ) -> None:
     """Assemble the ArchitectureReport and render it, then apply exit-code logic."""
     from datetime import UTC, datetime  # noqa: PLC0415
@@ -590,7 +599,7 @@ def _render_and_exit(  # noqa: PLR0913
     else:
         emit_report(rendered)
 
-    cleanup_state(resolved_state_dir)
+    cleanup_state(resolved_state_dir, explicit=explicit)
 
     # Exit 4: any issue at or above --max-severity
     if max_severity is not None:

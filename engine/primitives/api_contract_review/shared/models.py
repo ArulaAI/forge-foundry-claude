@@ -163,3 +163,129 @@ class APIContractReviewReport(BaseModel):
         for finding in self.findings:
             counts[finding.lens] = counts.get(finding.lens, 0) + 1
         return counts
+
+
+# ---------------------------------------------------------------------------
+# SP-F (#1386) — additive REST-API schema extraction models.
+#
+# These sit ALONGSIDE the review models above; the review path (lens_reviewer,
+# report_renderer, findings, exit codes, §3.4 ai_quality sub-call) is untouched.
+# The extraction reads only what the contract file DECLARES — no source-code
+# inference — so it stays deterministic and honest. The `api.py` Layer-1 adapter
+# threads a plain-dict serialisation of an ``ApiExtraction`` (never this model
+# object) into the modernization slice, so QUAL-2's cross-primitive-shared guard
+# stays green (Layer-1 must not import this Layer-2 model).
+# ---------------------------------------------------------------------------
+
+
+class FieldConstraint(BaseModel):
+    """One field-level validation constraint the contract declares.
+
+    Every non-name attribute defaults empty/None so a field that declares only
+    ``required`` (and no bounds) still round-trips through ``extra="forbid"``.
+    Only the constraints the contract *states* are populated — no inference.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    field: str
+    type: str = ""
+    required: bool = False
+    format: str | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    pattern: str | None = None
+    enum: list[str] = Field(default_factory=list)
+
+    def summary(self) -> str:
+        """A compact one-line human-readable constraint summary (e.g. for a table cell)."""
+        parts: list[str] = []
+        if self.type:
+            parts.append(self.type)
+        if self.required:
+            parts.append("required")
+        if self.format:
+            parts.append(f"format={self.format}")
+        if self.minimum is not None:
+            parts.append(f"min={self.minimum:g}")
+        if self.maximum is not None:
+            parts.append(f"max={self.maximum:g}")
+        if self.min_length is not None:
+            parts.append(f"minLength={self.min_length}")
+        if self.max_length is not None:
+            parts.append(f"maxLength={self.max_length}")
+        if self.pattern:
+            parts.append(f"pattern={self.pattern}")
+        if self.enum:
+            parts.append("enum=" + "|".join(self.enum))
+        detail = ", ".join(parts)
+        return f"{self.field}: {detail}" if detail else self.field
+
+
+class ResponseShape(BaseModel):
+    """One declared response for an operation: a status code + its DTO + fields."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status_code: str
+    description: str = ""
+    schema_name: str = ""
+    fields: list[FieldConstraint] = Field(default_factory=list)
+
+
+class ExtractedOperation(BaseModel):
+    """One operation (verb + path) extracted from the contract's declarations.
+
+    Carries the request DTO shape, per-status response shapes, and the security
+    requirement names that apply (per-operation ``security`` if declared, else the
+    document-level default). All collections default empty.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    method: str
+    path: str
+    operation_id: str = ""
+    summary: str = ""
+    request_schema_name: str = ""
+    request_fields: list[FieldConstraint] = Field(default_factory=list)
+    responses: list[ResponseShape] = Field(default_factory=list)
+    security: list[str] = Field(default_factory=list)
+
+    @property
+    def status_codes(self) -> list[str]:
+        """The declared response status codes, in declaration order."""
+        return [r.status_code for r in self.responses]
+
+
+class SecurityScheme(BaseModel):
+    """One entry from the contract's ``components.securitySchemes``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    type: str = ""
+    scheme: str = ""
+    bearer_format: str = ""
+    location: str = ""  # OpenAPI `in` (header/query/cookie) for apiKey schemes
+
+
+class ApiExtraction(BaseModel):
+    """Deterministic REST-API schema extraction — additive to the S40 review.
+
+    Produced by
+    :func:`~primitives.api_contract_review.shared.contract_parsers.openapi_parser.extract_operations`
+    (and re-exported from the primitive's public surface). The Layer-1
+    modernization ``api.py`` adapter consumes ``model_dump(mode="json")`` of this
+    object (a plain dict) — it never imports this class — so the cross-primitive
+    ``shared`` guard (QUAL-2) stays green.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    contract_path: str = ""
+    format: ContractFormat | None = None
+    operations: list[ExtractedOperation] = Field(default_factory=list)
+    security_schemes: list[SecurityScheme] = Field(default_factory=list)

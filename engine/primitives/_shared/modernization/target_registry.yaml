@@ -1,0 +1,41 @@
+# Bundled offline target-stack registry — the ONLY source of "latest known"
+# version resolution for target-aware modernization (SP1). No network lookup ever
+# happens; these values are the latest-known-as-of-this-foundry-release and are
+# updated per release in this checked-in data file.
+#
+# Shape: dimension -> value -> { latest, label }
+#   latest — the latest-known version string for that value at this release
+#   label  — a canonical render label; "{v}" is substituted with the resolved
+#            version. Labels are honest about staleness at render time
+#            ("latest known as of this release; verify at implementation time").
+#
+# Design: docs/superpowers/specs/2026-07-10-target-stack-modernization-design.md §1.
+
+frontend:
+  angular:
+    latest: "18"
+    label: "Angular {v}"
+  react:
+    latest: "19"
+    label: "React {v}"
+
+backend:
+  spring-boot:
+    latest: "3.3"
+    label: "Spring Boot {v}"
+  quarkus:
+    latest: "3.15"
+    label: "Quarkus {v}"
+
+database:
+  oracle:
+    latest: "23ai"
+    label: "Oracle {v}"
+  postgres:
+    latest: "16"
+    label: "PostgreSQL {v}"
+
+cloud:
+  aws:
+    latest: "current"
+    label: "AWS"

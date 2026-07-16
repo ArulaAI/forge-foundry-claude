@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FunctionalDigest",
+  "description": "Deterministic extraction output from Phase B (forge-validate functional-map --extract-only).",
+  "type": "object",
+  "required": ["endpoints", "guards", "roles", "capabilities", "nav_edges"],
+  "additionalProperties": false,
+  "properties": {
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "method", "handler", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "path": {"type": "string"},
+          "method": {"type": "string"},
+          "handler": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer"}
+        }
+      }
+    },
+    "guards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["endpoint_id", "kind", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint_id": {"type": "string"},
+          "kind": {"type": "string", "enum": ["auth_required", "role_required", "policy", "public"]},
+          "roles": {"type": "array", "items": {"type": "string"}},
+          "file": {"type": "string"},
+          "line": {"type": "integer"}
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "source": {"type": "string", "enum": ["code", "brd", "both"]}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "action", "endpoint_id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "action": {"type": "string"},
+          "endpoint_id": {"type": "string"},
+          "roles": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "nav_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from_screen", "to_screen", "kind", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "from_screen": {"type": "string"},
+          "to_screen": {"type": "string"},
+          "kind": {"type": "string", "enum": ["link", "redirect", "router"]},
+          "file": {"type": "string"},
+          "line": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

@@ -27,12 +27,18 @@ no PyYAML), which is why the skill body can invoke it in any harness session.
 Usage::
 
     python3 fe_review.py --findings-json payload.json \\
-        --scan-root ./src --format markdown --output ./review.md
+        --scan-root . --format markdown --output ./review.md
 
-    python3 fe_review.py --findings-json - --scan-root ./src --dry-run < payload.json
+    python3 fe_review.py --findings-json - --scan-root . --dry-run < payload.json
 
     # Scan only (no model findings), just emit the file/component inventory:
-    python3 fe_review.py --scan-only --scan-root ./src
+    python3 fe_review.py --scan-only --scan-root .
+
+Each finding's ``file`` MUST match a scanned path exactly — paths are enumerated
+relative to ``--scan-root`` (``path.relative_to(scan_root)``) and the file guard
+DROPS any finding whose ``file`` is not in that set. Keep ``--scan-root`` and the
+finding paths on the same base (e.g. ``--scan-root .`` with ``src/Button.tsx``, or
+``--scan-root ./src`` with ``Button.tsx``).
 """
 
 from __future__ import annotations

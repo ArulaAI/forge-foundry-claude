@@ -4,3 +4,4 @@ engine/.venv/
 *.egg-info/
 .forge-foundry/
 .pytest_cache/
+.DS_Store

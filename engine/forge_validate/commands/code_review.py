@@ -311,7 +311,10 @@ def cli(  # noqa: PLR0913, PLR0915
             cleanup_state,
             load_intermediate,
         )
-        from primitives._shared.protocol import read_judgments  # noqa: PLC0415
+        from primitives._shared.protocol import (  # noqa: PLC0415
+            assert_matching_round,
+            read_judgments,
+        )
         from primitives.code_review.shared.confidence_filter import (  # noqa: PLC0415
             filter_by_confidence,
         )
@@ -336,8 +339,11 @@ def cli(  # noqa: PLR0913, PLR0915
         file_paths = load_intermediate("files", resolved_state_dir)
         config = load_intermediate("config", resolved_state_dir)
 
-        # Read judgments
+        # Read judgments. code-review is single-round, so a judgments file for any
+        # round other than 1 is stale/wrong — reject it loudly rather than silently
+        # dropping the pending round and finalizing an incomplete report (#1304).
         judgment_envelope = read_judgments(Path(judgments))
+        assert_matching_round(judgment_envelope, 1, path=Path(judgments))
         judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
         # Reload context for anti-hallucination
@@ -429,7 +435,7 @@ def cli(  # noqa: PLR0913, PLR0915
             emit_report(rendered)
 
         # Cleanup state
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
 
         # Exit code logic
         saved_max_severity = config.get("max_severity", max_severity)

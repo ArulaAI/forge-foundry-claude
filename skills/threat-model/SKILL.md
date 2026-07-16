@@ -56,7 +56,12 @@ code path is given, then relay the results.
    CWE field MUST be the array key `"cwe_ids"` (a bare `"cwe"` is salvaged with a WARNING), and
    `"category"` MUST be one of the six enum tokens `spoofing`, `tampering`, `repudiation`,
    `info_disclosure`, `denial_of_service`, `elevation_of_privilege` (an unrecognized value is
-   dropped from the grouped report):
+   dropped from the grouped report). **Assign each threat a `"file"` and `"line"`** pointing at
+   the source location (in the spec or code) the threat concerns — the JSON output carries them
+   through so a downstream composer (S12 `/red-team-review` ingests `threat.json` expecting
+   `severity`/`file`/`line` per threat) can attribute and dedup threats by location. `"severity"`
+   is optional: when omitted it is derived from the DREAD label (`critical`/`high`/`medium`/`low`);
+   supply it explicitly only to override:
    ```json
    {
      "spec_title": "Checkout service",
@@ -66,6 +71,8 @@ code path is given, then relay the results.
          "id": "T-001",
          "category": "info_disclosure",
          "title": "Session token leaked in logs",
+         "file": "src/auth/logger.py",
+         "line": 42,
          "description": "...",
          "component": "auth-gateway",
          "mitigation": "...",

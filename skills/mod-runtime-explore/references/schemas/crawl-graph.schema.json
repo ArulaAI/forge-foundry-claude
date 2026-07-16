@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CrawlGraph",
+  "description": "The runtime_explore Phase-A intermediate (deterministic breadth crawl result), written under the state dir before the exit-7 handshake.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "screens": {"type": "array", "items": {"$ref": "runtime-journeys.schema.json#/definitions/screen"}},
+    "nav_edges": {"type": "array", "items": {"$ref": "runtime-journeys.schema.json#/definitions/navEdge"}},
+    "external_edges": {"type": "array", "items": {"$ref": "runtime-journeys.schema.json#/definitions/externalEdge"}},
+    "budget_visited": {"type": "integer", "minimum": 0},
+    "truncated": {"type": "boolean"}
+  }
+}

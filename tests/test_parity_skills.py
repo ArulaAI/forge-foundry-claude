@@ -1,9 +1,15 @@
 import re
 
+# The 15 Python-load-bearing (delegates-to-cli: true) primitives at the vendored
+# source version. Their SKILL.md bodies route work through `forge-validate <slug>`,
+# which the vendor rewrites to the `${CLAUDE_PLUGIN_ROOT}/bin/forge-validate` shim.
+# (`mod-modernization-strategist` was renamed `mod-sql-strategist` upstream; the
+# app-tier `mod-modernization-scope` is the M-tier synthesizer added since v5.)
 EXPECTED_PLB = {
-    "code-gen", "data-flow-map", "mod-db-schema-analyze", "mod-modernization-strategist",
-    "mod-playbook-discovery", "repo-digest", "rules-gen", "mod-sp-converter",
-    "mod-stored-proc-analyze", "mod-synth-logs", "test-from-spec", "test-scaffold",
+    "code-gen", "data-flow-map", "functional-map", "mod-db-schema-analyze",
+    "mod-modernization-scope", "mod-playbook-discovery", "mod-sp-converter",
+    "mod-sql-strategist", "mod-stored-proc-analyze", "mod-synth-logs",
+    "repo-digest", "rules-gen", "test-from-spec", "test-scaffold",
     "work-orchestrator",
 }
 
@@ -12,9 +18,10 @@ def _skills(repo_root):
     return repo_root / "skills"
 
 
-def test_31_skills_present(repo_root):
+def test_all_skills_present(repo_root):
+    # 38 canonical primitives vendored from forge-foundry-primitives v8.5.1.
     dirs = [p for p in _skills(repo_root).iterdir() if (p / "SKILL.md").is_file()]
-    assert len(dirs) == 31, f"expected 31 skills, got {len(dirs)}"
+    assert len(dirs) == 38, f"expected 38 skills, got {len(dirs)}"
 
 
 def test_no_dev_commands(repo_root):

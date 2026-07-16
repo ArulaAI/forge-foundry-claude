@@ -73,6 +73,23 @@ _SECTION_WORD_BUDGETS: dict[int, int] = {
 #: Citation instruction injected into every section prompt.
 _CITATION_RULE: str = "Every non-obvious claim carries a `path:line` citation present in code_root."
 
+#: Track B (#1427) — harness-fallback directive for entry-point capture. The
+#: deterministic per-flavor extractors capture the common Spring/JEE idioms
+#: (``@Scheduled`` / ``@KafkaListener`` / ``@JmsListener`` / ``main()`` / webhook
+#: routes) with their real trigger + ``file:line``. Stack-specific idioms the
+#: deterministic pass cannot recognize are the harness's job — per the
+#: universality invariant, the SKILL body reads the cited source and surfaces
+#: any remaining inbound trigger, NEVER silently dropping it.
+_ENTRY_POINT_FALLBACK_RULE: str = (
+    "Entry points: the digest already lists deterministically-extracted inbound "
+    "triggers (http/rest, batch/scheduled, cli, messaging, integration/webhook/soap) "
+    "with their real trigger value + `file:line`. Reading the cited source, capture "
+    "ANY additional stack-specific entry point the extractor missed (framework-native "
+    "schedulers, custom message consumers, CLI dispatchers, SOAP endpoints), each with "
+    "its real trigger (cron / topic / queue / route / command) and `file:line`. Report "
+    "a total `N entry points across K kinds` — never silently drop an unclassifiable one."
+)
+
 
 # ---------------------------------------------------------------------------
 # Ranking helpers — deterministic, mirrors playbook.py §15 ranking
@@ -194,6 +211,11 @@ def _slice_for_sections_1_2(analysis: AnalysisDigest) -> dict[str, Any]:
                 "name": ep.name,
                 "kind": ep.kind,
                 "target_unit": ep.target_unit,
+                # Track B (#1427): carry the real trigger (cron / topic / queue /
+                # route) + file:line source so §1/§2 render every inbound class,
+                # not just HTTP routes.
+                "trigger": ep.trigger,
+                "source": ep.source,
                 "security_requirements": list(ep.security_requirements),
             }
             for ep in sorted(analysis.entry_points, key=lambda e: e.name)
@@ -312,6 +334,9 @@ def build_synthesis_prompts(
             "digest_slice": slice_1_2,
             "source_files": capped_summary,
             "citation_rule": _CITATION_RULE,
+            # Track B (#1427): the entry-point harness fallback rides §2 (System
+            # Architecture), the section that surfaces the inbound surface.
+            "entry_point_fallback_rule": _ENTRY_POINT_FALLBACK_RULE,
         },
         {
             "number": 8,

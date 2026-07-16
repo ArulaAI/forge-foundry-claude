@@ -150,6 +150,7 @@ def cli(
     # --- Lazy imports to keep cold-start cheap (TOOL-2). -----------------
     from primitives._shared.pipeline_state import (  # noqa: PLC0415
         PipelineState,
+        PipelineStateNotFoundError,
         cleanup_state,
         load_intermediate,
         save_intermediate,
@@ -195,10 +196,31 @@ def cli(
     # Branch: --continue --judgments (resume after in-session judgment)
     # =========================================================================
     if continue_:
-        # Load intermediates saved during --extract-only
-        tables_raw = load_intermediate("tables", resolved_state_dir)
-        views_raw = load_intermediate("views", resolved_state_dir)
-        sequences_raw = load_intermediate("sequences", resolved_state_dir)
+        # Load intermediates saved during --extract-only. The state is cleaned up
+        # after a successful --continue, so a SECOND --continue on the same state
+        # dir must be idempotent (#1197 6d): if the digest was already written the
+        # run is finalized (safe no-op, exit 0); if there is no digest either, the
+        # run never ran (input error, exit 2) — never the generic exit 1.
+        try:
+            tables_raw = load_intermediate("tables", resolved_state_dir)
+            views_raw = load_intermediate("views", resolved_state_dir)
+            sequences_raw = load_intermediate("sequences", resolved_state_dir)
+        except PipelineStateNotFoundError:
+            digest_path = resolved_output / _DIGEST_FILENAME
+            if digest_path.is_file():
+                click.echo(
+                    f"[mod-db-schema-analyze] --continue: run already finalized; "
+                    f"digest at {digest_path}. Nothing to do.",
+                    err=True,
+                )
+                return
+            click.echo(
+                f"Error: no pipeline state under {resolved_state_dir} and no finalized "
+                f"digest at {digest_path} — run --extract-only first, then "
+                "--continue --judgments <path>.",
+                err=True,
+            )
+            sys.exit(2)
 
         tables = [Table.model_validate(d) for d in tables_raw]
         views = [View.model_validate(d) for d in views_raw]
@@ -219,7 +241,7 @@ def cli(
             output_dir=resolved_output,
             format_=format_,
         )
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
         return
 
     # =========================================================================
@@ -337,7 +359,7 @@ def cli(
                 output_dir=resolved_output,
                 format_=format_,
             )
-            cleanup_state(resolved_state_dir)
+            cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
             click.echo(
                 "[mod-db-schema-analyze] all tables classified deterministically; "
                 "no judgments needed.",

@@ -436,7 +436,7 @@ def cli(  # noqa: PLR0912, PLR0913, PLR0915
             )
 
         # Clean up state
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
 
         _emit_summary_and_report(
             accepted,

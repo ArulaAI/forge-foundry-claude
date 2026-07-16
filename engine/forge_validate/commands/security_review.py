@@ -375,7 +375,10 @@ def cli(  # noqa: PLR0912, PLR0913, PLR0915
             cleanup_state,
             load_intermediate,
         )
-        from primitives._shared.protocol import read_judgments  # noqa: PLC0415
+        from primitives._shared.protocol import (  # noqa: PLC0415
+            assert_matching_round,
+            read_judgments,
+        )
         from primitives.security_review.shared.compliance_annotator import (  # noqa: PLC0415
             annotate_compliance_refs,
             load_compliance_refs,
@@ -405,6 +408,9 @@ def cli(  # noqa: PLR0912, PLR0913, PLR0915
 
         # Read judgments
         judgment_envelope = read_judgments(Path(judgments))
+        # security-review is single-round: reject a wrong-round judgments file loudly
+        # rather than silently dropping the pending round (#1304).
+        assert_matching_round(judgment_envelope, 1, path=Path(judgments))
         judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
         # Reload compliance refs for annotation
@@ -501,8 +507,16 @@ def cli(  # noqa: PLR0912, PLR0913, PLR0915
         else:
             emit_report(rendered)
 
-        # Cleanup state
-        cleanup_state(resolved_state_dir)
+        # When the caller supplied --state-dir, persist a well-known security.json
+        # findings artifact so downstream S12 red-team-review can ingest it (#1292).
+        state_dir_is_explicit = state_dir is not None
+        if state_dir_is_explicit:
+            (resolved_state_dir / "security.json").write_text(
+                render_report(report, "json"), encoding="utf-8"
+            )
+
+        # Cleanup state (preserve a caller-supplied dir; only prune transient files)
+        cleanup_state(resolved_state_dir, explicit=state_dir_is_explicit)
 
         # Exit code logic
         saved_max_severity = config.get("max_severity", max_severity)

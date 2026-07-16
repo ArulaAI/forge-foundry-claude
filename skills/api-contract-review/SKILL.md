@@ -51,7 +51,8 @@ C11 overlaps against the S40 findings, then render the report.
    type+field). When `--baseline REF` is set, read the prior contract at that ref via git and
    compute the backward-compat diff — **removed** endpoints, **type_narrowed** fields, and **new
    required fields** — feeding that summary into the `backward_compatibility` lens. The result of
-   this phase is one prompt item per contract file (id prefix `contract:<file>`).
+   this phase is one prompt item per contract file (id `contract:<basename>` — the file's
+   name only, e.g. `contract:openapi.yaml`, not its full path).
 2. **Judge each prompt item (per-contract lens review).** For each item in
    `round-1-prompts.json` (one item per contract file):
    - Read the `system` and `user` fields. They describe a single contract file, the parsed
@@ -72,15 +73,18 @@ C11 overlaps against the S40 findings, then render the report.
      **CLEAR** the `rfc_ref` (keep the finding) unless it matches `^RFC\s?\d{3,5}$` or
      `^OWASP\s.*$`. Do **not** wrap the JSON in markdown fences.
    - Collect all responses into a `JudgmentEnvelope` and write it to
-     `round-1-judgments.json` in the same state directory. The envelope format is:
+     `round-1-judgments.json` in the same state directory. **Each item's `id` MUST be
+     copied verbatim from the matching item in `round-1-prompts.json`** — it is
+     `contract:<basename>` (the file's name only, e.g. `contract:openapi.yaml`, **not**
+     the full path). An item whose id does not match a prompt id is silently skipped,
+     yielding an empty report. The envelope format is:
      ```json
      {
        "schema_version": "1.0",
        "primitive": "api-contract-review",
        "round": 1,
        "items": [
-         {"id": "contract:<file>", "response": [<findings array>]},
-         ...
+         {"id": "contract:openapi.yaml", "response": [<findings array>]}
        ]
      }
      ```
@@ -164,3 +168,46 @@ behavior, the §3.4 dedup discipline, the SARIF runs layout, and the gate behavi
   exceed `--max-severity`; `5` critical C10/C11 findings surviving dedup (CI/harness mode only);
   `7` `--extract-only` succeeded — prompts written, body must judge and call `--continue`. Exits
   other than `0` and `7` are hard stops.
+
+## Target-stack judgment (SP6, additive — inert without a target)
+
+**This block is inert when no `target-stack.json` is present.** When `/mod-modernization`
+is running the full app-mod chain with a declared target (via `--target KEY=VALUE`), it
+writes `target-stack.json` under `.foundry/context/modernization/.state/<run-id>/`. When
+`/api-contract-review` is invoked as part of that chain (e.g. by the orchestrator to review
+a contract that exists alongside the source), check for that artifact. If absent, skip this
+block entirely — all behavior and all output are byte-identical to the no-target path.
+
+**If a target stack is provided** (i.e. `target-stack.json` exists under the run-id state
+dir):
+
+1. **Frame the extraction as the CURRENT contract to modernize toward the target.** When
+   writing findings and the report summary, make explicit that this contract represents the
+   *existing* (source-stack) API surface — the starting point for the migration, not the
+   target design. In the opening summary of the Markdown report, include a sentence such as:
+   "This review documents the **current API contract** of the source application. Given the
+   declared target stack (`<backend dimension label>`), the downstream `/mod-modernization-scope`
+   will synthesize a target REST API design in §8b, tracing each new resource endpoint to its
+   originating controller mapping identified here."
+
+2. **Identify modernization-relevant findings.** During per-lens review, note which findings
+   represent patterns that the target stack migration would naturally address (e.g. a missing
+   versioning scheme that the target Spring Boot service will adopt, an auth scheme that the
+   target stack replaces with OAuth2/JWT, a REST-anti-pattern that the new resource-per-aggregate
+   design dissolves). Add a `migration_note` comment in the report text (NOT as an extra JSON
+   field — the schema is `extra="forbid"`) by appending `[migration: <note>]` to the finding's
+   `description` string where relevant. This annotation is advisory; it does not change the
+   finding's severity, confidence, or `breaking` status.
+
+3. **Propagate the current contract to the scope stage.** The deterministic extraction
+   (`extract_operations`) already writes structured `ApiExtraction` output. When a target is
+   present, confirm in the run summary that the `functional-map.json` controller inventory
+   (if available under `.foundry/context/functional-map/`) will supplement the S40 extraction
+   in §8 Current API Surface — so the scope synthesizer has the fullest possible picture of
+   the current API before designing §8b. No additional writes are needed; this is a reminder
+   to the operator that the two sources are complementary.
+
+**Backward-compatible guarantee:** when `target-stack.json` is absent (the default standalone
+invocation), none of the above applies. The review lenses, confidence filter, anti-hallucination
+guards, §3.4 sub-calls, dedup discipline, and all exit codes are unchanged. The report format
+and content are byte-identical to the pre-SP6 behavior.

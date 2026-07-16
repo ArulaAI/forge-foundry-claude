@@ -131,6 +131,7 @@ def cli(
             max_severity=max_severity,
             judgments_path=Path(judgments),  # type: ignore[arg-type]
             state_dir=resolved_state_dir,
+            explicit=(state_dir is not None),
         )
         return
 
@@ -341,13 +342,17 @@ def _do_continue(
     max_severity: str | None,
     judgments_path: Path,
     state_dir: Path,
+    explicit: bool = False,
 ) -> None:
     """Apply FM3/FM4 judgments, merge with deterministic findings, render report."""
     from primitives._shared.pipeline_state import (  # noqa: PLC0415
         cleanup_state,
         load_intermediate,
     )
-    from primitives._shared.protocol import read_judgments  # noqa: PLC0415
+    from primitives._shared.protocol import (  # noqa: PLC0415
+        assert_matching_round,
+        read_judgments,
+    )
     from primitives.failure_mode_audit.shared.llm_judge import (  # noqa: PLC0415
         apply_fm3_judgment,
         apply_fm4_judgment,
@@ -363,8 +368,10 @@ def _do_continue(
     fm3_candidates = [deserialize_finding(d) for d in fm3_raw]
     fm4_candidates_data = fm4_raw  # list of dicts
 
-    # Read and apply judgments
+    # Read and apply judgments. C10 is single-round: reject a wrong-round judgments
+    # file loudly rather than silently dropping the pending round (#1304).
     judgment_envelope = read_judgments(judgments_path)
+    assert_matching_round(judgment_envelope, 1, path=judgments_path)
     judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
     llm_findings = []
@@ -399,7 +406,7 @@ def _do_continue(
                 llm_findings.append(result)
 
     all_findings = deterministic_findings + llm_findings
-    cleanup_state(state_dir)
+    cleanup_state(state_dir, explicit=explicit)
     _render_and_exit(all_findings, format_=format_, output=output, max_severity=max_severity)
 
 

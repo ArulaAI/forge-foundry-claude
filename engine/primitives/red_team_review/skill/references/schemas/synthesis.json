@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arula-ai.github.io/forge-foundry-primitives/schemas/red-team-synthesis.json",
+  "title": "RedTeamSynthesis",
+  "description": "Harness-authored synthesis.json for S12 red-team-review. Written into the shared --state-dir after ingesting security.json + threat.json. The Python pipeline validates each object against strict (extra=\"forbid\", frozen) Pydantic models on `forge-validate red-team-review --state-dir <dir>`; any unknown key or missing field is a hard ValidationError (exit 1). Keys must match these names EXACTLY.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "chains": {
+      "type": "array",
+      "description": "Exploit chains — sequences of S11/S10 findings that combine into an end-to-end attack.",
+      "items": {"$ref": "#/$defs/ExploitChain"}
+    },
+    "trees": {
+      "type": "array",
+      "description": "Attack trees — one pre-rendered Mermaid diagram per exploit objective.",
+      "items": {"$ref": "#/$defs/AttackTree"}
+    },
+    "abuse_cases": {
+      "type": "array",
+      "description": "Per-role abuse cases (enhanced when an S61 /functional-map is available).",
+      "items": {"$ref": "#/$defs/AbuseCase"}
+    },
+    "remediation": {
+      "type": "array",
+      "description": "Ranked remediation plan (rank 1 = fix first).",
+      "items": {"$ref": "#/$defs/RemediationItem"}
+    }
+  },
+  "$defs": {
+    "ExploitChain": {
+      "title": "ExploitChain",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "objective", "steps", "impact"],
+      "properties": {
+        "id": {"type": "string", "description": "EC-NNN (e.g. \"EC-001\")."},
+        "objective": {"type": "string", "description": "The attacker's end goal — NOT \"title\"."},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/ChainStep"}},
+        "impact": {
+          "type": "string",
+          "description": "Closed enum — NOT free text, and there is NO \"severity\" field on a chain.",
+          "enum": [
+            "info-disclosure",
+            "privilege-escalation",
+            "account-takeover",
+            "data-exfiltration",
+            "denial-of-service",
+            "rce"
+          ]
+        }
+      }
+    },
+    "ChainStep": {
+      "title": "ChainStep",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "finding_id", "technique", "file", "line", "effect"],
+      "properties": {
+        "order": {"type": "integer", "description": "1-based step order."},
+        "finding_id": {"type": "string", "description": "A ThreatNode id from the ingested graph (must exist in security.json/threat.json, else the step is dropped with a warning)."},
+        "technique": {"type": "string"},
+        "file": {"type": "string", "description": "Cite a real file from the finding."},
+        "line": {"type": "integer", "description": "Cite a real line from the finding."},
+        "effect": {"type": "string", "description": "What this step achieves — the key is \"effect\", NOT \"action\"."}
+      }
+    },
+    "AttackTree": {
+      "title": "AttackTree",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "mermaid"],
+      "properties": {
+        "objective": {"type": "string"},
+        "mermaid": {"type": "string", "description": "A PRE-RENDERED Mermaid `graph TD` string (the pipeline does not render it for you)."}
+      }
+    },
+    "AbuseCase": {
+      "title": "AbuseCase",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "scenario", "finding_ids"],
+      "properties": {
+        "id": {"type": "string", "description": "AB-NNN (e.g. \"AB-001\")."},
+        "role": {"type": "string"},
+        "scenario": {"type": "string"},
+        "finding_ids": {
+          "type": "array",
+          "description": "PLURAL — an array of ThreatNode ids.",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "RemediationItem": {
+      "title": "RemediationItem",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "fix", "addresses", "reachability", "blast_radius"],
+      "properties": {
+        "rank": {"type": "integer", "description": "1 = fix first — the key is \"rank\", NOT \"priority\"."},
+        "fix": {"type": "string"},
+        "addresses": {
+          "type": "array",
+          "description": "Chain / finding ids this fix addresses.",
+          "items": {"type": "string"}
+        },
+        "reachability": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+        "blast_radius": {"type": "string", "enum": ["low", "medium", "high", "critical"]}
+      }
+    }
+  }
+}

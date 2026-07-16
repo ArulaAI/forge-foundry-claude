@@ -1,4 +1,4 @@
-"""M3 /mod-modernization-strategist — deterministic shared pipeline.
+"""M3 /mod-sql-strategist — deterministic shared pipeline.
 
 Stages A-D decompose a legacy SQL database (the M1 :class:`SchemaDigest`
 + M2 :class:`StoredProcDigest`) into bounded contexts with ownership,

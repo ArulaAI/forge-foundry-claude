@@ -29,7 +29,7 @@ involvement (golden-file testable).
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -152,13 +152,21 @@ class ModernizationDigest(BaseModel):
 
 
 class SystemMapNode(BaseModel):
-    """One unit in the cross-unit graph."""
+    """One unit in the cross-unit graph.
+
+    ``domains`` carries **all** of the unit's bounded-context / domain labels
+    (#1375). A unit that a discovery pass tags with several domains (e.g. a
+    petclinic app spanning ``owner``/``pet``/``vet``/``visit``) keeps every one,
+    so the bounded contexts a consumer derives are the *union* of every node's
+    domains — not just the first label of each node (the pre-#1375 behaviour that
+    silently collapsed the other domains into ``_unassigned_`` downstream).
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     kind: str = ""
-    domain: str | None = None
+    domains: list[str] = Field(default_factory=list)
 
 
 class SystemMapEdge(BaseModel):
@@ -180,15 +188,44 @@ class SystemMapEdge(BaseModel):
     confidence: Literal["exact", "heuristic", "unresolved"] = "exact"
 
 
+class SystemMapEntryPoint(BaseModel):
+    """A typed **inbound** node on the system-map (Track B, #1427).
+
+    Unlike a :class:`SystemMapNode` (a unit) or an interface edge (a
+    unit→unit dependency), an entry point is the *outside trigger* that drives
+    the system: an HTTP route, a scheduled/cron job, a CLI command, a message
+    consumer, or an external integration / webhook / SOAP endpoint. ``trigger``
+    carries the real value (cron expr / topic / queue / route / command),
+    ``target`` names the context/unit it dispatches into, and ``source`` is the
+    ``file:line`` provenance. All but ``name``/``kind`` default empty so a
+    thinly-captured entry point still threads through honestly.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    kind: str = ""
+    trigger: str = ""
+    target: str = ""
+    source: str = ""
+
+
 @accepts_extended_schema
 class SystemMap(BaseModel):
-    """The joined cross-unit dependency graph (``correlate.py`` output)."""
+    """The joined cross-unit dependency graph (``correlate.py`` output).
+
+    Track B (#1427): ``entry_points`` carries the typed inbound triggers that
+    drive the system (scheduled jobs, message consumers, CLI entries, webhooks,
+    …). Default-empty — a system with no captured entry points threads through
+    byte-identically to prior behavior.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["1.0"] = "1.0"
     nodes: list[SystemMapNode] = Field(default_factory=list)
     edges: list[SystemMapEdge] = Field(default_factory=list)
+    entry_points: list[SystemMapEntryPoint] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -200,9 +237,10 @@ class SystemMap(BaseModel):
 class RoadmapItem(BaseModel):
     """One work item: a unit placed in a wave, deferred, or never-extract.
 
-    ``rationale`` explains a ``deferred`` / ``never_extract`` placement (e.g.
-    "in dependency cycle [a, b]", "external/unknown dependency"); it is empty for
-    items that sit cleanly in an ``extract_order`` wave.
+    ``rationale`` explains a ``deferred`` / ``never_extract`` / ``isolated``
+    placement (e.g. "in dependency cycle [a, b]", "external/unknown dependency",
+    "no dependencies discovered"); it is empty for items that sit cleanly in an
+    ``extract_order`` wave.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -244,7 +282,102 @@ class Roadmap(BaseModel):
     #: Units that cannot be cleanly extracted — in a dependency cycle or resolving
     #: only to an external/unknown node; each carries a ``rationale``.
     never_extract: list[RoadmapItem] = Field(default_factory=list)
+    #: Genuinely standalone units — no edges to or from any other unit and not a
+    #: shared-lib / data carrier others depend on. Surfaced here (not silently
+    #: dropped, nor scheduled as a meaningless wave-1 extraction target) because an
+    #: isolated unit is neither ``deferred`` (that implies a dependency block) nor
+    #: ``never_extract`` (that implies a cycle) — it simply has nothing to sequence
+    #: against; each carries a ``rationale`` (#1378).
+    isolated: list[RoadmapItem] = Field(default_factory=list)
     #: Dependency cycles surfaced (not silently dropped) — each a tuple of the
     #: node ids that form the strongly-connected component.
     cycles: list[tuple[str, ...]] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+# ---------------------------------------------------------------------------
+# FunctionalInventory — the functional-map FR layer (app-mod FR-threading, #1355)
+# ---------------------------------------------------------------------------
+
+
+class FunctionalInventory(BaseModel):
+    """The synthesized *functional layer* of a functional-map (S61) artifact.
+
+    The :class:`ModernizationDigest` is deliberately structural — it feeds
+    ``correlate.build_system_map``, which needs only interfaces/coordinates. The
+    functional-map's synthesized requirements (FR statements, acceptance criteria,
+    business rules, flows, journeys) therefore travel on this **separate typed
+    channel** (#1355) rather than bloating the digest. It is extracted from the
+    raw ``functional-map.json`` by
+    :func:`primitives._shared.modernization.adapters.functional_map.functional_map_to_inventory`
+    and threaded into the scope synthesizer's spec/roadmap steps (#1356/#1357) and
+    the app-analysis playbook render (#1358).
+
+    All collections default to empty so a functional-map missing any field (or a
+    ``--no-synthesis`` run) yields a valid, empty inventory rather than crashing.
+    Entries are kept as plain dicts (the ``model_dump()`` shapes the functional-map
+    render emits) so the channel stays decoupled from the S61 model classes.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: FR statements: ``{id, statement, priority, fr_type, source_evidence, domain?}``.
+    fr_statements: list[dict[str, Any]] = Field(default_factory=list)
+    #: Acceptance criteria: ``{fr_id, id, given, when, then}``.
+    acceptance_criteria: list[dict[str, Any]] = Field(default_factory=list)
+    #: Business rules: ``{step_ref, rule, source}``.
+    business_rules: list[dict[str, Any]] = Field(default_factory=list)
+    #: User flows: ``{id, name, steps, variant}``.
+    flows: list[dict[str, Any]] = Field(default_factory=list)
+    #: User journeys: ``{id, persona, goal, flow_ids}``.
+    journeys: list[dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        """True when no functional layer was present (e.g. a --no-synthesis map)."""
+        return not (
+            self.fr_statements
+            or self.acceptance_criteria
+            or self.business_rules
+            or self.flows
+            or self.journeys
+        )
+
+
+# ---------------------------------------------------------------------------
+# RepoEntry / RepoSet — multi-repo modernization set (MR1, #1550)
+# ---------------------------------------------------------------------------
+
+
+class RepoEntry(BaseModel):
+    """One repository in a multi-repo modernization set (MR1, #1550).
+
+    ``role`` is the tier this repo plays in the split-repo enterprise layout.
+    ``state`` is an OPTIONAL, UNTRUSTED prior hint about modernization state —
+    downstream (MR3/MR4) treats it as a prior only, never a verdict; a repo with
+    no reliable docs simply omits it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    role: Literal["ui", "api", "db", "iac"]
+    path: str
+    state: Literal["legacy", "partial", "modern"] | None = None
+
+
+class RepoSet(BaseModel):
+    """A validated set of repositories keyed by role (MR1, #1550).
+
+    Built from ``.foundry/repos.yaml`` and/or ``--repo role=path`` overrides.
+    Order-stable (insertion order of ``entries``). Empty when no manifest and no
+    override are supplied — callers then fall back to the single-repo path
+    (additive invariant, #1408).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    entries: tuple[RepoEntry, ...] = ()
+
+    def by_role(self, role: str) -> RepoEntry | None:
+        for e in self.entries:
+            if e.role == role:
+                return e
+        return None

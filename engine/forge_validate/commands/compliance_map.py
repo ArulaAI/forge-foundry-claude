@@ -250,6 +250,7 @@ def cli(  # noqa: PLR0913, PLR0915
             PromptEnvelope,
             PromptItem,
             ResponseFormat,
+            assert_matching_round,
             read_judgments,
             write_prompts,
         )
@@ -287,6 +288,9 @@ def cli(  # noqa: PLR0913, PLR0915
 
         assert judgments is not None  # guaranteed by validate_skill_first_flags
         judgment_envelope = read_judgments(Path(judgments))
+        # Reject a stale prior-round judgments file rather than silently
+        # finalizing and dropping the pending round (#1199).
+        assert_matching_round(judgment_envelope, pipeline.round, path=Path(judgments))
 
         # -------------------------------------------------------------------------
         # Sub-branch: round 1 -- apply controls, maybe emit evidence prompts
@@ -366,6 +370,7 @@ def cli(  # noqa: PLR0913, PLR0915
                 output=eff_output,
                 max_severity=eff_max_severity,
                 state_dir=resolved_state_dir,
+                explicit=(state_dir is not None),
             )
             return
 
@@ -399,6 +404,7 @@ def cli(  # noqa: PLR0913, PLR0915
                 output=eff_output,
                 max_severity=eff_max_severity,
                 state_dir=resolved_state_dir,
+                explicit=(state_dir is not None),
             )
             return
 
@@ -432,6 +438,7 @@ def _run_gap_and_render(
     output: Path | None,
     max_severity: str | None,
     state_dir: Path,
+    explicit: bool = False,
 ) -> None:
     """Run Stage E gap analysis + render + exit-code logic (both --continue rounds)."""
     from primitives._shared.pipeline_state import cleanup_state  # noqa: PLC0415
@@ -464,7 +471,7 @@ def _run_gap_and_render(
     else:
         emit_report(rendered)
 
-    cleanup_state(state_dir)
+    cleanup_state(state_dir, explicit=explicit)
 
     if max_severity is not None and gaps:
         threshold = _SEVERITY_ORDER.get(max_severity, 2)

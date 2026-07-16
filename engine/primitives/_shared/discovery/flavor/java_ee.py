@@ -417,6 +417,167 @@ def _extract_entry_points(source: str) -> list[EntryPoint]:
 
 
 # ---------------------------------------------------------------------------
+# Track B (#1427) — typed entry points: scheduled / messaging / cli / webhook
+# ---------------------------------------------------------------------------
+#
+# The historical ``_extract_entry_points`` above captures HTTP/route
+# annotations (``kind="api_route"``); ``_extract_batch_units`` captures
+# ``@Scheduled`` as a ``BatchUnit``. Track B *additionally* surfaces the four
+# unified inbound classes as first-class ``EntryPoint`` records carrying the
+# **real** trigger (cron / topic / queue / route) + ``file:line`` source, so the
+# system-map, the C4 diagram, and the spec's Entry Points section all render
+# them. This is additive: it does not remove or rewrite the existing records.
+
+#: Spring ``@Scheduled(cron = "…")`` / ``@Scheduled(fixedRate = …)``. The arg
+#: body is captured so we can lift the real cron expression as the trigger.
+_SCHEDULED_ANN_RE: Final[re.Pattern[str]] = re.compile(
+    r"@Scheduled\b(?:\s*\(([^)]*)\))?",
+)
+
+#: A Kafka / JMS / Rabbit / SQS message-listener annotation. The arg body
+#: carries the real topic / queue / destination.
+_MESSAGING_ANN_RE: Final[re.Pattern[str]] = re.compile(
+    r"@(KafkaListener|JmsListener|RabbitListener|SqsListener|StreamListener)"
+    r"\b(?:\s*\(([^)]*)\))?",
+)
+
+#: ``public static void main(String[] …)`` — a CLI / batch entry point.
+_MAIN_METHOD_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?:public\s+static|static\s+public)\s+void\s+main\s*\(",
+)
+
+#: Lift the first string-literal value from an annotation arg body. Handles
+#: ``cron = "…"``, ``topics = "…"``, ``destination = "…"``, or a bare ``"…"``.
+_TRIGGER_STRING_RE: Final[re.Pattern[str]] = re.compile(r'"([^"]+)"')
+
+#: Route-path substrings that reclassify an inbound HTTP route as a webhook.
+_WEBHOOK_PATH_MARKERS: Final[tuple[str, ...]] = ("webhook", "callback", "hook")
+
+
+def _strip_comments_line_preserving(source: str) -> str:
+    """Blank out comments but keep every newline so offsets stay line-aligned.
+
+    Block comments are replaced by their own newline run (not empty) and line
+    comments by an equal-length blank, so a match offset in the returned string
+    maps to the same 1-based line as in the original source — the ``file:line``
+    provenance Track B records stays accurate even when a multi-line comment
+    precedes the declaration. (The shared :func:`_strip_comments` collapses
+    comments to ``""`` and is deliberately left untouched.)
+    """
+
+    def _keep_newlines(match: re.Match[str]) -> str:
+        return "\n" * match.group(0).count("\n")
+
+    no_blocks = _BLOCK_COMMENT_RE.sub(_keep_newlines, source)
+    return _LINE_COMMENT_RE.sub("", no_blocks)
+
+
+def _line_of(source: str, offset: int, file_path: Path) -> str:
+    """Return the ``<file>:<line>`` provenance for a byte *offset* in *source*."""
+    line = source.count("\n", 0, offset) + 1
+    return f"{file_path.name}:{line}"
+
+
+def _first_trigger_string(arg_body: str) -> str:
+    """Return the first string literal in an annotation arg body, or ``""``."""
+    m = _TRIGGER_STRING_RE.search(arg_body)
+    return m.group(1) if m is not None else ""
+
+
+def _classify_route_kind(trigger: str) -> str:
+    """Classify a route path — ``webhook`` when it looks like a callback, else ``api_route``."""
+    low = trigger.lower()
+    if any(marker in low for marker in _WEBHOOK_PATH_MARKERS):
+        return "webhook"
+    return "api_route"
+
+
+def _extract_typed_entry_points(source: str, file_path: Path) -> list[EntryPoint]:
+    """Capture scheduled / messaging / cli / webhook entry points (Track B, #1427).
+
+    Deterministic, per-kind extraction where the Spring/JEE idiom is
+    recognizable:
+
+    * ``@Scheduled(cron = "…")`` → ``kind="scheduled"``, ``trigger`` = the cron
+      expression (or the raw arg body when no string literal, e.g. ``fixedRate``).
+    * ``@KafkaListener(topics = "…")`` / ``@JmsListener(destination = "…")`` /
+      Rabbit / SQS / Spring-Cloud-Stream → ``kind="messaging"``, ``trigger`` =
+      the topic / queue / destination.
+    * ``public static void main(String[])`` → ``kind="cli"``.
+    * an ``@PostMapping("/webhooks/…")`` (or ``callback`` / ``hook`` path) →
+      ``kind="webhook"``, ``trigger`` = the route path.
+
+    Every record carries a ``file:line`` ``source``. Stack-specific idioms this
+    deterministic pass does not recognize are captured by the SKILL body's
+    harness fallback (the universality invariant) — nothing is silently dropped.
+    """
+    out: list[EntryPoint] = []
+
+    # --- scheduled --------------------------------------------------------
+    for match in _SCHEDULED_ANN_RE.finditer(source):
+        symbol = _extract_route_target(source, match.end())
+        if symbol is None:
+            continue
+        arg_body = match.group(1) or ""
+        trigger = _first_trigger_string(arg_body) or arg_body.strip()
+        out.append(
+            EntryPoint(
+                name=symbol,
+                kind="scheduled",
+                trigger=trigger,
+                source=_line_of(source, match.start(), file_path),
+            )
+        )
+
+    # --- messaging --------------------------------------------------------
+    for match in _MESSAGING_ANN_RE.finditer(source):
+        symbol = _extract_route_target(source, match.end())
+        if symbol is None:
+            continue
+        arg_body = match.group(2) or ""
+        out.append(
+            EntryPoint(
+                name=symbol,
+                kind="messaging",
+                trigger=_first_trigger_string(arg_body),
+                source=_line_of(source, match.start(), file_path),
+            )
+        )
+
+    # --- cli (main) -------------------------------------------------------
+    for match in _MAIN_METHOD_RE.finditer(source):
+        out.append(
+            EntryPoint(
+                name="main",
+                kind="cli",
+                source=_line_of(source, match.start(), file_path),
+            )
+        )
+
+    # --- webhook (route paths that look like callbacks) -------------------
+    for match in _ROUTE_ANNOTATION_RE.finditer(source):
+        ann_args = match.group(2) or ""
+        if not ann_args:
+            continue
+        string_match = _ANNOTATION_STRING_RE.search(ann_args)
+        if string_match is None:
+            continue
+        route = string_match.group(1)
+        if _classify_route_kind(route) != "webhook":
+            continue
+        out.append(
+            EntryPoint(
+                name=route,
+                kind="webhook",
+                trigger=route,
+                source=_line_of(source, match.start(), file_path),
+            )
+        )
+
+    return out
+
+
+# ---------------------------------------------------------------------------
 # JPA entities — DataStore emission
 # ---------------------------------------------------------------------------
 
@@ -1149,6 +1310,19 @@ def _parse_java(file_path: Path, content: str) -> dict[str, list[object]]:
         if sep.name not in existing_ep_names:
             ep_list.append(sep)
             existing_ep_names.add(sep.name)
+
+    # Track B (#1427): typed inbound entry points (scheduled / messaging / cli /
+    # webhook) with the real trigger + file:line source. These carry distinct
+    # kinds, so dedup on (kind, name) — a webhook route path may share a name
+    # with an api_route record but is a genuinely different inbound class.
+    existing_ep_keys = {(ep.kind, ep.name) for ep in ep_list}
+    # Match on a line-preserving clean (still comment-free, but offsets map to the
+    # original line numbers) so each record's file:line provenance is accurate.
+    for tep in _extract_typed_entry_points(_strip_comments_line_preserving(content), file_path):
+        key = (tep.kind, tep.name)
+        if key not in existing_ep_keys:
+            ep_list.append(tep)
+            existing_ep_keys.add(key)
 
     return {
         "execution_units": list(eu_list),

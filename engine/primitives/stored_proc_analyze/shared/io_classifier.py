@@ -23,10 +23,12 @@ Decision order (priority, top to bottom — first match wins):
    ``reads_writes``.
 4. DML present, no ``SELECT`` → ``writes_only``.
 5. ``SELECT`` present, no DML → ``reads_only``.
-6. Nothing detected (extremely degenerate SPs or unparseable bodies)
-   → ``reads_only`` (the safest classification for risk scoring; a
-   "we don't know" answer would force the downstream scorer to skip
-   the row).
+6. Parseable but degenerate body (no DML, no SELECT) → ``reads_only``
+   (the lowest-impact classification for a proc we *could* read).
+7. Unparseable body (``ast is None``, no cursor signal) → ``unknown``
+   (#1343) — the read/write breakdown is undetermined, so we must not
+   claim ``reads_only`` for a proc that may write. Unparseable SPs are
+   risk-scored via the dedicated sentinel path, not this value.
 
 Design spec §M2 Stage C (`docs/superpowers/specs/2026-05-22-data-modernization-design.md`).
 """
@@ -73,10 +75,11 @@ _LINE_COMMENT_ONLY_RE = re.compile(r"^\s*--")
 def classify_io_shape(parsed_sp: ParsedSP) -> IOShape:
     """Return the :data:`IOShape` literal describing ``parsed_sp``.
 
-    Unparseable SPs fall through to the regex-based cursor signal and
-    a default of ``reads_only`` if no signal fires — keeping a uniform
-    return contract so downstream code does not branch on
-    ``parse_status``.
+    Unparseable SPs are still checked for the regex-based cursor signal;
+    if it does not fire they degrade to ``"unknown"`` (#1343) rather than
+    a confident ``reads_only`` — a proc we could not parse may write, and
+    reporting it as read-only is misleading. The return contract stays
+    uniform so downstream code does not branch on ``parse_status``.
     """
     ast = parsed_sp.ast
 
@@ -97,9 +100,13 @@ def classify_io_shape(parsed_sp: ParsedSP) -> IOShape:
 
     # Step 3-5 — the read / write breakdown only runs when the AST is
     # available. Unparseable bodies cannot be reliably bucketed beyond
-    # the cursor signal above, so they fall through to step 6.
+    # the cursor signal above, so they degrade to ``unknown`` (#1343):
+    # claiming ``reads_only`` for a proc we could not read is a
+    # silent-failure lie — a proc that writes three tables must not be
+    # reported as read-only. Unparseable SPs carry the risk sentinel
+    # regardless, so this value never skews parsed-SP scoring.
     if ast is None:
-        return "reads_only"
+        return "unknown"
 
     has_dml = _has_dml(ast)
     has_select = _has_top_level_select(ast)

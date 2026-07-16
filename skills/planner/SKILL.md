@@ -68,9 +68,9 @@ Python script for template rendering and static self-review before handing off t
          "files": ["path/to/file.py"],
          "depends_on": [],
          "steps": [
-           "Write failing test: `def test_foo(): ...`",
+           "Write failing test: `def test_foo(): assert Foo().value == 1`",
            "Confirm test fails: `uv run pytest tests/test_foo.py -x`",
-           "Implement (minimal): add `Foo` class",
+           "Implement (minimal): add `Foo` class with `value = 1`",
            "Confirm test passes: `uv run pytest tests/test_foo.py -x`",
            "Commit: `feat(foo): add Foo class`"
          ]

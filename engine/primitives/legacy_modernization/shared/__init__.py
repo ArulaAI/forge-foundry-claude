@@ -1,4 +1,4 @@
-"""M0 /mod-legacy-modernization — shared Python modules.
+"""M0 /mod-sql-modernization — shared Python modules.
 
 This package contains the Stage-5 roll-up renderer (``report_aggregator``).
 It is the only Python component in M0's orchestrator-shape — all per-stage

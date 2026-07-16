@@ -67,6 +67,14 @@ def _sequencing_section(plan: DecompositionPlan) -> list[str]:
                 [[i.name, i.rationale or "—"] for i in plan.roadmap.never_extract],
             )
         )
+    if plan.roadmap.isolated:
+        parts.append(heading("Isolated (no dependencies discovered)", 3))
+        parts.append(
+            md_table(
+                ["Context", "Rationale"],
+                [[i.name, i.rationale or "—"] for i in plan.roadmap.isolated],
+            )
+        )
     return parts
 
 

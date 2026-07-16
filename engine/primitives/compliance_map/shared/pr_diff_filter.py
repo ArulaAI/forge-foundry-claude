@@ -56,6 +56,35 @@ def validate_diff_range(value: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_repo_root(start: Path) -> Path:
+    """Return the true git repository root containing *start*.
+
+    ``git diff --name-only`` always emits paths relative to the repo TOPLEVEL,
+    regardless of the subprocess cwd. So to turn those paths back into real
+    on-disk files we must join them onto the toplevel — NOT onto whatever
+    ``start`` path the caller happened to pass (which may be a subdirectory,
+    e.g. ``api/``). Passing a subdir produced ``api/api/routes/x.py`` and every
+    file was silently dropped (#1351). We resolve the toplevel via
+    ``git rev-parse --show-toplevel`` from *start*; if that fails (not a git
+    dir), we fall back to *start* so behaviour is unchanged for non-repo cwds.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            cwd=str(start),
+            timeout=30,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return start
+    top = result.stdout.strip()
+    if result.returncode == 0 and top:
+        return Path(top)
+    return start
+
+
 def get_changed_files(
     diff_range: str,
     repo_root: Path | None = None,
@@ -65,19 +94,28 @@ def get_changed_files(
 
     Args:
         diff_range: Git diff range in REF1...REF2 or REF1..REF2 format.
-        repo_root: Root of the git repository. Defaults to cwd.
+        repo_root: A path INSIDE the target git repository (typically the
+            CODE_PATH). The true repository toplevel is resolved from it via
+            ``git rev-parse --show-toplevel`` (#1351), so passing a subdirectory
+            is fine — changed-file paths are joined onto the toplevel and then
+            filtered to the CODE_PATH subtree by the caller's ``enumerate_files``.
+            Defaults to cwd.
         primitive_name: Slug of the invoking primitive, used in log labels
             (e.g. ``"code-review"``, ``"security-review"``, ``"compliance-map"``).
             Defaults to ``"compliance-map"`` for backward-compatibility.
 
     Returns:
-        List of Path objects for changed files (relative to repo_root).
+        Absolute :class:`Path` objects (under the repo toplevel) for the changed
+        files that exist on disk.
 
     Raises:
         GitDiffError: If git command fails.
     """
     validate_diff_range(diff_range)
-    cwd = repo_root or Path.cwd()
+    start = repo_root or Path.cwd()
+    # git diff --name-only reports paths relative to the repo TOPLEVEL, so both
+    # the subprocess cwd and the path join must use the toplevel — not a subdir.
+    cwd = _resolve_repo_root(start)
 
     try:
         result = subprocess.run(  # noqa: S603

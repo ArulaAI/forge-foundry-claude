@@ -272,7 +272,7 @@
     },
     "EntryPoint": {
       "additionalProperties": false,
-      "description": "Abstract entry-point profile (M-EPIC-3 polyglot vocabulary).\n\nThe thing an outside actor invokes. Mainframe projection: a CICS\ntransaction is an ``EntryPoint`` with ``kind=\"cics_transaction\"``\ntargeting a COBOL program. Python projection: a ``@app.get`` route\nis ``kind=\"api_route\"`` targeting the handler ``ExecutionUnit``.\nNode projection: an Express route is ``kind=\"web_route\"``.\n\n``target_unit`` names the ``ExecutionUnit`` the entry point dispatches\ninto (the polyglot rename of ``CICSTransaction.target_program``).\n``security_requirements`` and ``ui_elements`` carry forward\nopen-ended so consumers can extend without a Literal edit per\nflavour.",
+      "description": "Abstract entry-point profile (M-EPIC-3 polyglot vocabulary).\n\nThe thing an outside actor invokes. Mainframe projection: a CICS\ntransaction is an ``EntryPoint`` with ``kind=\"cics_transaction\"``\ntargeting a COBOL program. Python projection: a ``@app.get`` route\nis ``kind=\"api_route\"`` targeting the handler ``ExecutionUnit``.\nNode projection: an Express route is ``kind=\"web_route\"``.\n\n``target_unit`` names the ``ExecutionUnit`` the entry point dispatches\ninto (the polyglot rename of ``CICSTransaction.target_program``).\n``security_requirements`` and ``ui_elements`` carry forward\nopen-ended so consumers can extend without a Literal edit per\nflavour.\n\nTrack B (#1427): ``trigger`` carries the **real** inbound value \u2014 the cron\nexpression for a ``scheduled`` job, the topic / queue for a ``messaging``\nconsumer, the route path for an ``api_route`` / ``webhook``, the command for\na ``cli`` entry. ``source`` is the ``file:line`` provenance of the\ndeclaration. Both default empty (the frozen model stays backward-compatible;\nthe historical HTTP/CICS records simply carry ``\"\"``).",
       "properties": {
         "kind": {
           "enum": [
@@ -280,7 +280,14 @@
             "api_route",
             "cli_command",
             "scheduled_trigger",
-            "web_route"
+            "web_route",
+            "batch",
+            "scheduled",
+            "cli",
+            "messaging",
+            "integration",
+            "webhook",
+            "soap"
           ],
           "title": "Kind",
           "type": "string"
@@ -296,9 +303,19 @@
           "title": "Security Requirements",
           "type": "array"
         },
+        "source": {
+          "default": "",
+          "title": "Source",
+          "type": "string"
+        },
         "target_unit": {
           "default": "",
           "title": "Target Unit",
+          "type": "string"
+        },
+        "trigger": {
+          "default": "",
+          "title": "Trigger",
           "type": "string"
         },
         "ui_elements": {

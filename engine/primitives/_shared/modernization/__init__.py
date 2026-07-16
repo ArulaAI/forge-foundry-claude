@@ -16,7 +16,13 @@ Markdown/Mermaid/traceability helpers (#635).
 from __future__ import annotations
 
 from primitives._shared.modernization.correlate import build_system_map
+from primitives._shared.modernization.deconstruct import render_deconstruction
 from primitives._shared.modernization.digest import compress
+from primitives._shared.modernization.hla import (
+    HlaDocument,
+    HlaSource,
+    render_architecture_conformance,
+)
 from primitives._shared.modernization.models import (
     EngineFacts,
     FactsInterface,
@@ -54,6 +60,8 @@ __all__ = [
     "EngineFacts",
     "FactsInterface",
     "FactsUnit",
+    "HlaDocument",
+    "HlaSource",
     "ModernizationDigest",
     "RefCheckReport",
     "Roadmap",
@@ -72,6 +80,8 @@ __all__ = [
     "load_schema",
     "md_table",
     "refcheck",
+    "render_architecture_conformance",
+    "render_deconstruction",
     "sequence",
     "sequence_diagram",
     "traceability_matrix",

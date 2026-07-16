@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RuntimeExploreExplorePlan",
+  "description": "Input plan for mod-runtime-explore. Secrets are by reference only (env-var name or gitignored file path), never inline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url", "url_scope"],
+  "properties": {
+    "base_url": {
+      "type": "string",
+      "description": "The running app's base URL the crawl starts from."
+    },
+    "url_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Allow/deny globs checked before EVERY navigation (the containment guard). Deny wins.",
+      "properties": {
+        "allow": {"type": "array", "items": {"type": "string"}},
+        "deny": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_pages": {"type": "integer", "minimum": 1},
+        "max_depth": {"type": "integer", "minimum": 0},
+        "page_timeout_ms": {"type": "integer", "minimum": 0},
+        "total_timeout_s": {"type": "integer", "minimum": 0},
+        "wait_until": {"enum": ["domcontentloaded", "networkidle", "load"]}
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "EXACTLY ONE shape: flat single-realm (creds_from + creds_ref, no profiles) OR profiles (named realms, each with its own creds — no top-level creds). login_url is always required (the shared default; a profile may override).",
+      "required": ["mode", "login_url"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["agent_login"]},
+        "login_url": {"type": "string"},
+        "creds_from": {"type": "string", "enum": ["env", "file"]},
+        "creds_ref": {
+          "type": "string",
+          "description": "An env-var NAME (creds_from: env) or a gitignored file PATH (creds_from: file). Never the secret itself."
+        },
+        "profiles": {
+          "type": "object",
+          "description": "Named login realms for multi-realm apps that share one login URL but differ by input selectors. Names + selectors are arbitrary and operator-supplied.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["username_selector", "password_selector", "creds_from", "creds_ref"],
+            "properties": {
+              "username_selector": {"type": "string"},
+              "password_selector": {"type": "string"},
+              "submit_selector": {"type": ["string", "null"], "description": "Optional; falls back to a generic submit."},
+              "login_url": {"type": ["string", "null"], "description": "Optional per-profile override of the top-level login_url."},
+              "creds_from": {"type": "string", "enum": ["env", "file"]},
+              "creds_ref": {
+                "type": "string",
+                "description": "An env-var NAME or gitignored file PATH — never the secret itself."
+              }
+            }
+          }
+        }
+      }
+    },
+    "seed_data_ref": {
+      "type": ["string", "null"],
+      "description": "Path to a gitignored file of realistic form values by field name/role."
+    },
+    "roles": {
+      "type": "object",
+      "description": "Named user-role perspectives (#1563). Empty ⇒ single-perspective run (byte-identical). Non-empty ⇒ a FULL separate crawl per role, merged + role-tagged. Requires an auth block.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["creds_from", "creds_ref"],
+        "properties": {
+          "login_profiles": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Ordered auth.profiles keys to log in through. Empty ⇒ use the flat single-realm login. More than one ⇒ CHAINED login (authenticate through each realm in order). Each named key must exist under auth.profiles."
+          },
+          "creds_from": {"type": "string", "enum": ["env", "file"]},
+          "creds_ref": {
+            "type": "string",
+            "description": "The role's OWN credential reference: an env-var NAME or gitignored file PATH — never the secret itself. The profile supplies selectors; the role supplies credentials."
+          }
+        }
+      }
+    }
+  }
+}

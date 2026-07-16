@@ -169,7 +169,7 @@ def _emit_next_or_finish(
         stage = next_stage(node)
         if stage is not None:
             round_no = _next_round_no(tree, state_dir)
-            envelope = prompts.build_prompt(tree, node, stage, round_no)
+            envelope = prompts.build_prompt(tree, node, stage, round_no, state_dir)
             prompts_path = _write_round_prompts(tree, state_dir, envelope, round_no)
             return LegResult(awaiting=True, round_no=round_no, prompts_path=prompts_path)
 

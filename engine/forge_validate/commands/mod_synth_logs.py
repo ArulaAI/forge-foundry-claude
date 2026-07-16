@@ -202,6 +202,47 @@ def cli(
         )
         sys.exit(2)
 
+    # --- Catalog dispatch — exit 6 when no catalog is registered for the -----
+    # resolved platform flavor. Runs BEFORE Phase A (#1198 7a) so a non-mainframe
+    # repo gets a SPECIFIC "no catalog registered for flavor X" message (exit 6)
+    # instead of running the mainframe-only Phase A ingest to an empty digest and
+    # then hitting the generic "Phase B not implemented" exit 4. Both invocation
+    # modes now resolve the real flavor, so exit 6 is consistent for any
+    # non-``cics_cobol`` repo (previously a codebase-only walk blindly assumed
+    # cics_cobol and hit exit 4).
+    from primitives.synth_logs.shared.catalog import (  # noqa: PLC0415
+        UnsupportedFlavorError,
+        assert_catalog_available,
+        detect_flavor_from_playbook,
+    )
+
+    if have_playbook and resolved_playbook is not None:
+        _detected_flavor = (
+            detect_flavor_from_playbook(resolved_playbook.read_text(encoding="utf-8")) or "generic"
+        )
+    else:
+        # Codebase-only walk: detect the REAL platform flavor from the source
+        # root (reusing the discovery engine) rather than blindly assuming
+        # cics_cobol — that masqueraded a Python repo as mainframe and produced
+        # the misleading exit 4. Falls back to the universal "generic" flavor
+        # when no pack matches, so assert_catalog_available reports it honestly.
+        from primitives._shared.discovery.recon import detect_platform_flavor  # noqa: PLC0415
+
+        assert resolved_code_root is not None  # guaranteed by the input check above
+        _flavor_name, _ = detect_platform_flavor(resolved_code_root, manifest_hits=[])
+        _detected_flavor = _flavor_name or "generic"
+
+    try:
+        assert_catalog_available(_detected_flavor)
+    except UnsupportedFlavorError as exc:
+        click.echo(
+            f"Error: {exc} — pass a cics_cobol playbook or a mainframe "
+            "source root to use the v1 catalog. Other platform catalogs "
+            'land as T2 work (see SPEC.md §"Extension surface").',
+            err=True,
+        )
+        sys.exit(6)
+
     # --- Phase A — ingest -----------------------------------------------
     # ``primitives.synth_logs.shared.ingest`` is fully wired (#465,
     # M6-PHASE-A-1). The importlib dance is kept so the test suite can
@@ -236,44 +277,10 @@ def cli(
         raise click.exceptions.Exit(1) from exc
 
     # Surface the Phase A digest summary so the next phase's stub can
-    # reference real counts in its error message rather than hide them.
+    # reference real counts in its error message rather than hide them. Only a
+    # ``cics_cobol`` repo reaches here — non-mainframe flavors exited 6 above.
     _programs_count = len(getattr(entities, "programs", []))
     _transactions_count = len(getattr(entities, "transactions", []))
-
-    # --- Catalog dispatch — exit 6 when no catalog registered for flavor ---
-    # Detect the platform flavor from the playbook text (when a playbook was
-    # provided) or treat as the ``cics_cobol`` default for codebase-only walks
-    # (M6 v1 ships a mainframe-only codebase ingest path; non-mainframe
-    # codebase walks are not yet wired). Falls back to ``"generic"`` when the
-    # playbook content does not match any flavor's heuristic threshold.
-    #
-    # Exit 6 fires BEFORE the Phase B stub so a non-mainframe flavor gets a
-    # SPECIFIC "no catalog registered" message instead of the generic Phase B
-    # NotImplementedError message (issue #870).
-    from primitives.synth_logs.shared.catalog import (  # noqa: PLC0415
-        UnsupportedFlavorError,
-        assert_catalog_available,
-        detect_flavor_from_playbook,
-    )
-
-    if have_playbook and resolved_playbook is not None:
-        _playbook_text = resolved_playbook.read_text(encoding="utf-8")
-        _detected_flavor = detect_flavor_from_playbook(_playbook_text) or "generic"
-    else:
-        # Codebase-only walk: v1 codebase ingest is mainframe-only; the
-        # explicit cics_cobol default is the honest current-capability claim.
-        _detected_flavor = "cics_cobol"
-
-    try:
-        assert_catalog_available(_detected_flavor)
-    except UnsupportedFlavorError as exc:
-        click.echo(
-            f"Error: {exc} — pass a cics_cobol playbook or a mainframe "
-            "source root to use the v1 catalog. Other platform catalogs "
-            'land as T2 work (see SPEC.md §"Extension surface").',
-            err=True,
-        )
-        sys.exit(6)
 
     # --- Phase B — scenario planning -------------------------------------
     # Stub call site — the real synthesiser lands with M6-PHASE-B-* (#467,

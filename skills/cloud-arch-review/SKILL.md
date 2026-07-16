@@ -79,13 +79,29 @@ else is offloaded to `scripts/cloud_arch_render.py` (stdlib-only, bare `python3`
    `"SEC-8"`), `compliance_refs`, and `security_refs`. Optionally run C10 and C11 sub-calls
    (unless `--skip-ai-quality`) and include their raw findings as `c10_findings` and
    `c11_findings`. Include any allowlist files (`compliance_allowlist`, `security_allowlist`)
-   when present. Exact top-level shape:
+   when present.
+
+   **You MUST include the top-level `iac_files` and `workload_context` keys** (from step 1).
+   The render script builds its anti-hallucination ground truth (the *reviewed-files set*)
+   from `iac_files`, then **drops every finding whose `file` is not in that set**. If you omit
+   `iac_files` (or list paths that don't resolve on disk), the reviewed-files set is empty and
+   **every finding is silently dropped — you get an empty report**. Each `pillar_findings[].file`
+   MUST exactly match a path in `iac_files` (absolute paths are safest, since the script checks
+   each path resolves with `Path(fpath).is_file()`). Exact top-level shape:
    ```json
    {
+     "workload_context": {
+       "workload_type": "api",
+       "criticality": "tier-1",
+       "rto_minutes": 15,
+       "rpo_minutes": 5,
+       "regions": ["us-east-1"]
+     },
+     "iac_files": ["/abs/path/to/k8s/web.yaml"],
      "pillar_findings": [
        {
          "pillar": "reliability",
-         "file": "k8s/web.yaml",
+         "file": "/abs/path/to/k8s/web.yaml",
          "line": 12,
          "resource_id": "web",
          "severity": "high",
@@ -102,6 +118,8 @@ else is offloaded to `scripts/cloud_arch_render.py` (stdlib-only, bare `python3`
      "c11_findings": []
    }
    ```
+   Note how `pillar_findings[0].file` is a member of `iac_files` — that is what keeps the
+   finding from being dropped by the reviewed-files guard.
 
 3. **Invoke the render script** (`<skill-dir>` is this skill's own deployed directory — the
    folder containing this SKILL.md; substitute its path, or `cd` there and drop the prefix).

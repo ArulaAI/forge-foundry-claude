@@ -39,11 +39,14 @@ Return shape:
 
 * Always a sorted list with no duplicates, drawn from the
   :data:`SideEffect` Literal vocabulary.
-* The literal ``"none"`` is returned **only** when no other surface
-  fires. It is a positive signal ("we looked and found nothing") rather
-  than a placeholder, so downstream M3 sequencing and M4 plan-synthesis
-  can branch on ``"none" in sp.side_effects`` without nullable
-  reasoning.
+* The literal ``"none"`` is returned when no surface fires **for a
+  parseable SP**. It is a positive signal ("we looked and found
+  nothing") rather than a placeholder, so downstream M3 sequencing and
+  M4 plan-synthesis can branch on ``"none" in sp.side_effects`` without
+  nullable reasoning. An *unparseable* SP with no surface returns
+  ``"unknown"`` instead (#1343) — "we could not fully look", not "we
+  found nothing" — so a write-heavy proc the parser choked on is never
+  labelled side-effect-free.
 
 Design spec §M2 Stage D
 (``docs/superpowers/specs/2026-05-22-data-modernization-design.md``).
@@ -53,6 +56,8 @@ from __future__ import annotations
 
 import re
 from typing import TYPE_CHECKING
+
+from sqlglot import exp
 
 if TYPE_CHECKING:
     from primitives.stored_proc_analyze.shared.models import SideEffect
@@ -203,6 +208,58 @@ _DYNAMIC_SQL_RE = re.compile(
 )
 
 
+# Audit / log / notification / outbox / history write surfaces (#1293). A write
+# (INSERT/UPDATE/DELETE/MERGE) into a table of this shape is an ``audit_write``
+# side effect: the migrator must preserve the audit-trail / outbox write
+# semantics transactionally across the strangler boundary — a data-integrity
+# hazard distinct from a plain domain-table write. The alternatives are anchored
+# on word-ish boundaries (start/end of the name, or an ``_`` separator) so
+# ``catalog`` / ``blog`` / ``dialog`` do not match on a bare ``log`` substring.
+_AUDIT_TABLE_RE = re.compile(
+    r"(?:^|_)("
+    r"audit"
+    r"|log|logs"
+    r"|notification|notifications"
+    r"|outbox"
+    r"|eventlog|event_log"
+    r"|changelog|change_log"
+    r"|history|hist"
+    r")(?:$|_)",
+    re.IGNORECASE,
+)
+
+
+def _write_target_tables(ast: exp.Expression) -> list[str]:
+    """Return the unqualified names of every INSERT/UPDATE/DELETE/MERGE target."""
+    names: list[str] = []
+    for node in ast.find_all(exp.Insert, exp.Update, exp.Delete, exp.Merge):
+        target = node.this
+        # INSERT wraps its target in a Schema (table + column list); UPDATE /
+        # DELETE / MERGE carry the Table directly.
+        if isinstance(target, exp.Schema):
+            target = target.this
+        if isinstance(target, exp.Table):
+            names.append(target.name)
+    return names
+
+
+def audit_write_tables(parsed_sp: ParsedSP) -> tuple[str, ...]:
+    """Return the sorted distinct audit-shaped tables the SP WRITES to (#1293).
+
+    A table is audit-shaped when its unqualified name matches
+    :data:`_AUDIT_TABLE_RE` (audit / log / notification / outbox / event-log /
+    changelog / history). Only *write* targets count — reading an audit table
+    is not an ``audit_write`` side effect. Returns ``()`` for an unparseable SP
+    (``ast is None``), since write targets cannot be reliably recovered without
+    the AST.
+    """
+    ast = parsed_sp.ast
+    if ast is None:
+        return ()
+    audit = {name for name in _write_target_tables(ast) if _AUDIT_TABLE_RE.search(name)}
+    return tuple(sorted(audit))
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -220,10 +277,13 @@ def detect_side_effects(parsed_sp: ParsedSP) -> list[SideEffect]:
     Returns:
         A sorted list drawn from the closed
         :data:`primitives.stored_proc_analyze.shared.models.SideEffect`
-        vocabulary. The list contains ``"none"`` if and only if no other
-        surface was detected — never alongside a non-``"none"`` value.
-        Duplicates are removed; ordering is alphabetic so two SPs with
-        the same surface set always compare equal.
+        vocabulary. When no surface is detected: a *parseable* SP returns
+        ``["none"]`` (a real "no side effects" fact); an *unparseable* SP
+        returns ``["unknown"]`` (#1343) because the absent AST means the
+        scan was incomplete. Neither ``"none"`` nor ``"unknown"`` ever
+        appears alongside a detected surface. Duplicates are removed;
+        ordering is alphabetic so two SPs with the same surface set always
+        compare equal.
     """
     cleaned = _strip_for_scan(parsed_sp.raw_body)
 
@@ -236,8 +296,20 @@ def detect_side_effects(parsed_sp: ParsedSP) -> list[SideEffect]:
         detected.add("external")
     if _has_dynamic_sql(cleaned):
         detected.add("dynamic_sql")
+    # audit_write keys off the AST write targets, not the comment-stripped text.
+    if audit_write_tables(parsed_sp):
+        detected.add("audit_write")
 
     if not detected:
+        # An *unparseable* SP degrades to ``["unknown"]`` rather than
+        # ``["none"]`` (#1343): the raw-body scan can only surface the
+        # regex-detectable mechanisms (email/file/external/dynamic_sql),
+        # while ``audit_write`` — and any write the regexes don't model —
+        # relies on the AST that is absent here. Claiming "no side effects"
+        # for a proc we could not fully analyze is a silent-failure lie.
+        # A *parseable* SP with nothing detected is a genuine ``["none"]``.
+        if parsed_sp.parse_status == "unparseable":
+            return ["unknown"]
         return ["none"]
     return sorted(detected)
 
@@ -274,4 +346,4 @@ def _has_dynamic_sql(cleaned: str) -> bool:
     return bool(_DYNAMIC_SQL_RE.search(cleaned))
 
 
-__all__ = ["detect_side_effects"]
+__all__ = ["audit_write_tables", "detect_side_effects"]

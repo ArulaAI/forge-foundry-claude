@@ -18,4 +18,4 @@ def test_engine_imports(repo_root):
 def test_vendor_lock_present(repo_root):
     import json
     lock = json.loads((repo_root / "engine" / "VENDOR_LOCK.json").read_text())
-    assert len(lock["sha"]) == 40 and lock["primitive_count"] == 31
+    assert len(lock["sha"]) == 40 and lock["primitive_count"] == 38

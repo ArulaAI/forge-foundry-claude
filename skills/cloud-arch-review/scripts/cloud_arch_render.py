@@ -1191,6 +1191,28 @@ def build_document(payload: dict[str, object], confidence_threshold: str) -> Rev
         if normalized is not None:
             pillar_findings.append(normalized)
 
+    # Loud summary when the reviewed-files guard swallowed everything (#1295).
+    # The per-finding drop warnings are easy to miss; a payload that submits
+    # findings but forgot `iac_files` (or listed unresolvable paths) yields an
+    # empty report that reads as "no findings" rather than "you forgot iac_files".
+    dropped_count = len(items) - len(pillar_findings)
+    if items and not pillar_findings and dropped_count:
+        if not reviewed_files:
+            print(
+                f"[cloud-arch-review] WARNING: all {dropped_count} submitted finding(s) "
+                "were dropped and the report is EMPTY because `iac_files` is missing/empty "
+                "— the reviewed-files set was empty, so every finding's file was 'unknown'. "
+                "Add the top-level `iac_files` list (matching each finding's `file`) and re-run.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[cloud-arch-review] WARNING: all {dropped_count} submitted finding(s) "
+                "were dropped — the report is EMPTY. Check that each finding's `file` matches "
+                "a resolvable path in `iac_files` and that `resource_id`/`confidence` are valid.",
+                file=sys.stderr,
+            )
+
     # S20 (file, line) keys for dedup
     s20_keys: set[tuple[str, int]] = {(f.file, f.line) for f in pillar_findings}
 

@@ -9,7 +9,7 @@ description: >
   in-session folding FM10 architectural-decay findings into the layer violations, and renders
   a Markdown, JSON, or SARIF report. Use when the user asks to "review the architecture",
   "check for cyclic dependencies", "analyze coupling", or "detect layer violations" — and as
-  the C8 §3.4 sub-call that generative primitives (M3 mod-modernization-strategist and
+  the C8 §3.4 sub-call that generative primitives (M3 mod-sql-strategist and
   others) invoke as `/architecture-review <target>` on an emitted architectural artifact to
   get structural findings back.
 allowed-tools: Read, Grep, Glob, Bash
@@ -31,7 +31,7 @@ correctness (that is C4 `/code-review`).
 - When cyclic imports or layer-boundary drift is suspected.
 - After adding new modules — check for layer violations and coupling regressions.
 - During review of architectural changes, or in CI to prevent coupling regressions.
-- As the **§3.4 sub-call** invoked by a generative primitive (M3 mod-modernization-strategist
+- As the **§3.4 sub-call** invoked by a generative primitive (M3 mod-sql-strategist
   runs `/architecture-review` on its emitted `decomposition.json`; other generative primitives
   follow the same Generative→Review auto-invoke) on an emitted architectural artifact, returning
   structural findings the caller folds into its own narrative.

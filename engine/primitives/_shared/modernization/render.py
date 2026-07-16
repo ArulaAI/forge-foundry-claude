@@ -24,10 +24,11 @@ token and the human-readable name appear in the diagram.
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 # ---------------------------------------------------------------------------
 # Constants / helpers
@@ -44,9 +45,21 @@ def _escape_cell(text: str) -> str:
     return text.replace("|", r"\|").replace("\n", " ").replace("\r", " ")
 
 
+def _escape_mermaid_text(text: str) -> str:
+    """Neutralize a mermaid string value: escape ``"`` and strip line breaks.
+
+    An unescaped ``"`` closes the mermaid string; a raw newline breaks out of the
+    current statement and lets an attacker-authored label inject a following mermaid
+    directive (e.g. ``click``). Escaping the quote as ``&quot;`` and collapsing
+    newlines to spaces keeps any label — including agent-authored ones — a single
+    inert string. Shared by node and edge labels.
+    """
+    return text.replace('"', "&quot;").replace("\n", " ").replace("\r", " ")
+
+
 def _quote_label(label: str) -> str:
-    """Quote a mermaid node label, escaping interior ``"`` as ``&quot;``."""
-    return '"' + label.replace('"', "&quot;") + '"'
+    """Quote a mermaid node label, escaping ``"`` and stripping line breaks."""
+    return '"' + _escape_mermaid_text(label) + '"'
 
 
 # ---------------------------------------------------------------------------
@@ -196,11 +209,155 @@ def flowchart(
         s = mapper.safe(src)
         d = mapper.safe(dst)
         if edge_label:
-            lines.append(f'  {s} -- "{edge_label}" --> {d}')
+            lines.append(f'  {s} -- "{_escape_mermaid_text(edge_label)}" --> {d}')
         else:
             lines.append(f"  {s} --> {d}")
 
     return _wrap("\n".join(lines), fenced=fenced)
+
+
+# ---------------------------------------------------------------------------
+# Mermaid: C4-style component diagram
+# ---------------------------------------------------------------------------
+
+#: The target-stack dimensions surfaced as C4 component tiers, in
+#: presentation → application → data render order.  Keys match
+#: :class:`~primitives._shared.modernization.target_stack.TargetDimension.key`.
+_C4_TARGET_TIERS: tuple[tuple[str, str], ...] = (
+    ("frontend", "SPA"),
+    ("backend", "Service"),
+    ("database", "Database"),
+)
+
+
+#: The Mermaid class name + classDef used to distinctly style the Track B
+#: (#1427) inbound entry-point tier so it reads as a separate band from the
+#: bounded-context / target-component nodes.
+_ENTRY_POINT_CLASS: str = "entrypoint"
+_ENTRY_POINT_CLASSDEF: str = (
+    f"  classDef {_ENTRY_POINT_CLASS} fill:#fef3c7,stroke:#d97706,stroke-width:2px;"
+)
+
+
+def component_diagram(
+    contexts: Sequence[tuple[str, str]],
+    edges: Sequence[tuple[str, str, str]],
+    target: object | None = None,
+    *,
+    entry_points: Sequence[tuple[str, str, str]] | None = None,
+    direction: str = "TD",
+    fenced: bool = True,
+) -> str:
+    """Render a C4-style component :func:`flowchart` from bounded contexts + edges.
+
+    Reuses the :func:`flowchart` emitter (so mermaid-id-safety and label
+    quoting are shared, not reimplemented). Each context is one node; each edge
+    is a labeled dependency arrow. When *target* carries target-stack
+    dimensions, a leading target-component tier (e.g. ``Angular SPA`` →
+    ``Spring Boot Service`` → ``Oracle Database``) is prepended and wired to the
+    first context so the diagram shows the components the system modernizes onto.
+
+    Args:
+        contexts: ``(context_id, label)`` pairs — the bounded contexts /
+            system-map units. May be empty (then only target tiers, if any,
+            render).
+        edges: ``(src_id, dst_id, edge_label)`` dependency triples between
+            context ids.
+        target: an optional object exposing ``dimensions`` (a
+            :class:`~primitives._shared.modernization.target_stack.TargetStack`).
+            Each dimension whose ``key`` is a known C4 tier contributes a
+            component node labeled from its ``label`` (falling back to
+            ``value``). ``None`` or an empty stack → no target tier (structural
+            behavior unchanged).
+        entry_points: Track B (#1427) typed inbound triggers —
+            ``(name, kind, target_id)`` triples. Each renders as a
+            distinctly-styled inbound node (an entry-point tier) wired into its
+            ``target_id`` context (or, when the target is unknown/empty, into the
+            first context). ``None``/empty → no entry-point tier and NO
+            ``classDef`` (the diagram is byte-identical to prior output).
+        direction: flowchart direction (see :func:`flowchart`).
+        fenced: wrap in a ```` ```mermaid ```` block (default) or return raw.
+
+    Returns:
+        A Mermaid flowchart string.
+    """
+    nodes: list[tuple[str, str]] = []
+    extra_edges: list[tuple[str, str, str]] = []
+
+    target_tier_ids: list[str] = []
+    for dim_key, tier_word in _C4_TARGET_TIERS:
+        label = _target_component_label(target, dim_key, tier_word)
+        if label:
+            node_id = f"target::{dim_key}"
+            nodes.append((node_id, label))
+            target_tier_ids.append(node_id)
+
+    # Wire the target tiers top-down (SPA → Service → Database).
+    for upper, lower in pairwise(target_tier_ids):
+        extra_edges.append((upper, lower, ""))
+
+    # The bounded contexts follow the target tiers.
+    for ctx_id, label in contexts:
+        nodes.append((ctx_id, label))
+
+    # Connect the target's data/application tier to the first context so the
+    # diagram is one connected component, not two disjoint graphs.
+    if target_tier_ids and contexts:
+        anchor = target_tier_ids[-1]
+        extra_edges.append((anchor, contexts[0][0], "hosts"))
+
+    # Track B (#1427): the inbound entry-point tier. Each entry point is a node
+    # ``ep::<name>`` wired into its target context (falling back to the first
+    # context when the named target is not a known node). The nodes are given a
+    # distinct Mermaid class so they read as a separate inbound band.
+    entry_point_ids: list[str] = []
+    known_ctx_ids = {ctx_id for ctx_id, _ in contexts}
+    for name, kind, ep_target in entry_points or ():
+        node_id = f"ep::{name}"
+        label = f"{name} ({kind})" if kind else name
+        nodes.append((node_id, label))
+        entry_point_ids.append(node_id)
+        dst = ep_target if ep_target in known_ctx_ids else (contexts[0][0] if contexts else "")
+        if dst:
+            extra_edges.append((node_id, dst, "triggers"))
+
+    if not entry_point_ids:
+        # No entry points → exactly the historical output (no classDef band).
+        return flowchart(nodes, [*extra_edges, *edges], direction=direction, fenced=fenced)
+
+    # Build raw, then append the classDef + class-assignment lines for the
+    # entry-point tier before (re-)wrapping. Reuses the shared id-safety by
+    # asking ``flowchart`` for the safe token of each entry-point node id.
+    raw = flowchart(nodes, [*extra_edges, *edges], direction=direction, fenced=False)
+    mapper = _IdMapper("n")
+    for node_id, _ in nodes:
+        mapper.safe(node_id)
+    safe_ep_ids = [mapper.safe(node_id) for node_id in entry_point_ids]
+    styled = "\n".join(
+        [
+            raw,
+            _ENTRY_POINT_CLASSDEF,
+            f"  class {','.join(safe_ep_ids)} {_ENTRY_POINT_CLASS};",
+        ]
+    )
+    return _wrap(styled, fenced=fenced)
+
+
+def _target_component_label(target: object | None, dim_key: str, tier_word: str) -> str:
+    """Return ``"<label> <tier_word>"`` for *dim_key* on *target*, or ``""``.
+
+    Reads the target's ``dimensions`` by attribute (duck-typed), matching the
+    dimension whose ``key`` equals *dim_key*. Uses the dimension ``label`` (e.g.
+    ``"Spring Boot 3.3"``) when present, else its ``value``. Returns ``""`` when
+    *target* is ``None`` or declares no such dimension.
+    """
+    if target is None:
+        return ""
+    for dim in getattr(target, "dimensions", ()) or ():
+        if getattr(dim, "key", "") == dim_key:
+            base = getattr(dim, "label", "") or getattr(dim, "value", "")
+            return f"{base} {tier_word}" if base else ""
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +481,180 @@ def er_diagram(
         lines.append(f"  {sl} {cardinality} {sr} : {label}")
 
     return _wrap("\n".join(lines), fenced=fenced)
+
+
+# ---------------------------------------------------------------------------
+# Mermaid: business-audience diagrams (Track C, #1429)
+#
+# Four business-register diagram emitters for the per-context BRD.md. They consume
+# the SAME extracted structure the technical diagrams do (flows, entry points, nav
+# edges + per-page data, contexts, actors, entity states) but render it with
+# plain-language labels for a business reader — distinct from the spec's technical
+# C4 / ER / sequence diagrams. Each reuses the shared :func:`flowchart` emitter (so
+# mermaid-id-safety + label quoting are shared, never re-implemented). No fabrication:
+# empty inputs → ``""`` (the emitter omits, its BRD section renders nothing).
+# ---------------------------------------------------------------------------
+
+
+def business_process_diagram(
+    journeys: Sequence[tuple[str, Sequence[str]]],
+    entry_points: Mapping[str, str] | None = None,
+    *,
+    fenced: bool = True,
+) -> str:
+    """Render an end-to-end business-process / user-journey flow (Track C, #1429).
+
+    Each journey is a labeled left-to-right chain of plain-language steps. When a
+    journey has an entry point (``entry_points[journey_label]``), that entry point
+    is rendered as the FIRST node and wired into the journey's first step — the
+    journey literally *starts at its entry point* (the "New Owner button →
+    Register owner" business framing). Reuses :func:`flowchart`.
+
+    Args:
+        journeys: ``(journey_label, [step_label, ...])`` pairs. A journey with no
+            steps contributes only its entry-point→journey node (if any).
+        entry_points: optional ``{journey_label: entry_point_label}`` map — each
+            journey's inbound trigger in business terms. ``None``/missing → the
+            journey starts at its first step.
+        fenced: wrap in a ```` ```mermaid ```` block (default) or return raw.
+
+    Returns:
+        A Mermaid flowchart string, or ``""`` when *journeys* is empty.
+    """
+    if not journeys:
+        return ""
+    eps = entry_points or {}
+    nodes: list[tuple[str, str]] = []
+    edges: list[tuple[str, str, str]] = []
+    for j_idx, (journey, steps) in enumerate(journeys):
+        step_ids: list[str] = []
+        ep_label = eps.get(journey)
+        if ep_label:
+            ep_id = f"ep{j_idx}"
+            nodes.append((ep_id, ep_label))
+            step_ids.append(ep_id)
+        for s_idx, step in enumerate(steps):
+            node_id = f"j{j_idx}s{s_idx}"
+            nodes.append((node_id, f"{journey}: {step}" if s_idx == 0 and not ep_label else step))
+            step_ids.append(node_id)
+        for src, dst in pairwise(step_ids):
+            edges.append((src, dst, ""))
+    return flowchart(nodes, edges, direction="LR", fenced=fenced)
+
+
+def screen_flow_diagram(
+    nav_edges: Sequence[tuple[str, str, str]],
+    page_data: Mapping[str, Sequence[str]] | None = None,
+    *,
+    fenced: bool = True,
+) -> str:
+    """Render a screen / page-flow + navigation map for the BRD (Track C, #1429).
+
+    Shows how a user moves between screens; each screen is annotated with its real
+    per-page data (Track D) in business terms — the screen node label carries the
+    page name plus its fields (e.g. ``Owner Detail — Name, Pets, Visits``). Reuses
+    :func:`flowchart`; the navigation kind labels each transition arrow.
+
+    Args:
+        nav_edges: ``(from_screen, to_screen, kind)`` triples (the extracted nav
+            graph).
+        page_data: optional ``{screen: [field, ...]}`` — the real fields each page
+            reads/writes, from Track-D per-view data. ``None`` → screens render
+            with no data annotation.
+        fenced: wrap in a ```` ```mermaid ```` block (default) or return raw.
+
+    Returns:
+        A Mermaid flowchart string, or ``""`` when *nav_edges* is empty.
+    """
+    if not nav_edges:
+        return ""
+    data = page_data or {}
+
+    def _label(screen: str) -> str:
+        fields = data.get(screen)
+        return f"{screen} — {', '.join(fields)}" if fields else screen
+
+    screens: dict[str, str] = {}
+    for frm, to, _kind in nav_edges:
+        screens.setdefault(frm, _label(frm))
+        screens.setdefault(to, _label(to))
+    nodes = list(screens.items())
+    edges = [(frm, to, kind) for frm, to, kind in nav_edges]
+    return flowchart(nodes, edges, direction="LR", fenced=fenced)
+
+
+def business_capability_map(
+    contexts: Sequence[str],
+    relationships: Sequence[tuple[str, str, str]] | None = None,
+    *,
+    fenced: bool = True,
+) -> str:
+    """Render a business-capability / context map for the BRD (Track C, #1429).
+
+    Each bounded context is a business capability node; each relationship is a
+    labeled dependency between two capabilities. Reuses :func:`flowchart` (so a
+    single capability with no relationships still renders as one node).
+
+    Args:
+        contexts: the bounded contexts as business-capability labels.
+        relationships: optional ``(src_capability, dst_capability, label)`` triples.
+            ``None``/empty → capabilities render as standalone nodes.
+        fenced: wrap in a ```` ```mermaid ```` block (default) or return raw.
+
+    Returns:
+        A Mermaid flowchart string, or ``""`` when *contexts* is empty.
+    """
+    if not contexts:
+        return ""
+    rels = relationships or []
+    nodes = [(ctx, ctx) for ctx in dict.fromkeys(contexts)]
+    edges = [(src, dst, label) for src, dst, label in rels]
+    return flowchart(nodes, edges, direction="TD", fenced=fenced)
+
+
+def actor_lifecycle_diagram(
+    actor_capabilities: Sequence[tuple[str, str]],
+    entity_states: Sequence[tuple[str, Sequence[str]]] | None = None,
+    *,
+    fenced: bool = True,
+) -> str:
+    """Render an actor→capability + entity data-lifecycle view for the BRD (Track C).
+
+    Two business views in one diagram: actor→capability edges (who does what) and
+    per-entity state flows (``Draft → Submitted → Paid``). Reuses :func:`flowchart`.
+    Either view may be empty; if BOTH are empty the emitter omits (``""``).
+
+    Args:
+        actor_capabilities: ``(actor, capability)`` pairs — each actor is wired to
+            a capability it exercises.
+        entity_states: optional ``(entity, [state, ...])`` pairs — the business
+            entity's lifecycle states, wired in order as a left-to-right chain.
+        fenced: wrap in a ```` ```mermaid ```` block (default) or return raw.
+
+    Returns:
+        A Mermaid flowchart string, or ``""`` when both inputs are empty.
+    """
+    states = entity_states or []
+    if not actor_capabilities and not states:
+        return ""
+    nodes: dict[str, tuple[str, str]] = {}
+    edges: list[tuple[str, str, str]] = []
+    for a_idx, (actor, capability) in enumerate(actor_capabilities):
+        actor_id = f"actor::{actor}"
+        cap_id = f"cap::{capability}"
+        nodes.setdefault(actor_id, (actor_id, actor))
+        nodes.setdefault(cap_id, (cap_id, capability))
+        edges.append((actor_id, cap_id, "performs" if a_idx == 0 else ""))
+    for entity, entity_state_list in states:
+        state_ids: list[str] = []
+        for s_idx, state in enumerate(entity_state_list):
+            state_id = f"state::{entity}::{s_idx}"
+            label = f"{entity}: {state}" if s_idx == 0 else state
+            nodes.setdefault(state_id, (state_id, label))
+            state_ids.append(state_id)
+        for a, b in pairwise(state_ids):
+            edges.append((a, b, ""))
+    return flowchart(list(nodes.values()), edges, direction="LR", fenced=fenced)
 
 
 # ---------------------------------------------------------------------------

@@ -208,7 +208,7 @@ def cli(
         for path in write_conversion(result, resolved_output):
             click.echo(f"WROTE {path}")
 
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
         return
 
     # =========================================================================

@@ -103,7 +103,10 @@ def cli(  # noqa: PLR0915
             cleanup_state,
             load_intermediate,
         )
-        from primitives._shared.protocol import read_judgments  # noqa: PLC0415
+        from primitives._shared.protocol import (  # noqa: PLC0415
+            assert_matching_round,
+            read_judgments,
+        )
         from primitives.confidence_gate.shared.models import (  # noqa: PLC0415
             GateScore,
             NormalizedFinding,
@@ -128,6 +131,9 @@ def cli(  # noqa: PLR0915
         # Read judgments; look up "narrative:confidence-gate" response (dict)
         assert judgments is not None  # guaranteed by validate_skill_first_flags
         judgment_envelope = read_judgments(Path(judgments))
+        # confidence-gate is single-round: reject a wrong-round judgments file loudly
+        # rather than silently dropping the pending round (#1304).
+        assert_matching_round(judgment_envelope, 1, path=Path(judgments))
         judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
         raw_response = judgment_map.get("narrative:confidence-gate", {})
@@ -168,7 +174,7 @@ def cli(  # noqa: PLR0915
             emit_report(rendered)
 
         # Clean up state
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
 
         # Exit 4: recommendation exceeds --max-recommendation
         if max_recommendation is not None:

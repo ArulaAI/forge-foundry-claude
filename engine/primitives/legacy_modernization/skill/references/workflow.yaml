@@ -1,4 +1,4 @@
-# M0 /mod-legacy-modernization — curated C7 workflow definition (M0-3 / #254).
+# M0 /mod-sql-modernization — curated C7 workflow definition (M0-3 / #254).
 #
 # This file is the M0-specific workflow contract consumed by the C7
 # /work-orchestrator runtime. It encodes the five-stage M1 -> M2 -> M3 -> M4
@@ -33,7 +33,7 @@ stages:
       context_dir: '$context_dir'
     skip_when: '$skip_stored_procs'
   - name: strategy
-    command: forge-validate mod-modernization-strategist
+    command: forge-validate mod-sql-strategist
     args:
       context_dir: '$context_dir'
       target_paradigm: '$target_paradigm'

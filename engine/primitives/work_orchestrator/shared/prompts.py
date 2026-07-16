@@ -29,6 +29,7 @@ from primitives._shared.protocol import (
     PromptItem,
     ResponseFormat,
 )
+from primitives.work_orchestrator.shared import state_store
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -135,7 +136,7 @@ _SYSTEM: Mapping[str, str] = {
 _DIFF_CONSUMERS = frozenset({"review", "intent-review", "spec-validate", "node-gate"})
 
 
-def _curated_user(tree: WorkTree, node: Node, stage: Stage) -> str:
+def _curated_user(tree: WorkTree, node: Node, stage: Stage, state_dir: Path) -> str:
     """Assemble the curated input block for *node* at *stage* (#988).
 
     Includes only what the stage needs — the node's title/spec-seed, its spec
@@ -146,18 +147,24 @@ def _curated_user(tree: WorkTree, node: Node, stage: Stage) -> str:
     orchestrator never inlines a diff/report *body* or session history — it keeps
     each prompt to compact identity + **paths/refs** so the fresh-context subagent
     reads upstream artifacts fresh (the token-discipline invariant, spec §3).
+
+    The report/spec hint paths are composed from the resolved *state_dir* (the
+    ``--state-dir`` value, or ``DEFAULT_STATE_DIR`` when unset) so they point at
+    where the run *actually* persists state — not the hardcoded default (#1298).
     """
     branch = f"foundry/{tree.root_slug}"
-    report_dir = f".foundry/workflow-state/{tree.run_id}/nodes/{node.path}"
+    run_root = state_store.run_dir(state_dir, tree.run_id)
+    # Compose the report-dir hint via state_store's own node-dir helper so the hint
+    # ALWAYS matches where reports are actually written — no duplicated "nodes"
+    # constant that could drift from state_store (#1298).
+    report_dir = state_store.node_dir(state_dir, tree.run_id, node.path)
     lines = [
         f"Run: {tree.run_id}",
         f"Node: {node.path}",
         f"Build branch: {branch}",
         f"Title: {node.title}" if node.title else "",
         f"Spec-seed: {node.spec_seed}" if node.spec_seed else "",
-        f"Spec path: .foundry/workflow-state/{tree.run_id}/{node.spec_path}"
-        if node.spec_path
-        else "",
+        f"Spec path: {run_root / node.spec_path}" if node.spec_path else "",
         f"Reports dir: {report_dir} (read upstream stage reports here)",
         # Diff source for the stages that judge the produced change (#988): the
         # build branch's diff vs its merge base. The subagent reads it fresh.
@@ -194,18 +201,28 @@ def _response_format(stage: Stage) -> ResponseFormat:
     return ResponseFormat(type="text")
 
 
-def build_prompt(tree: WorkTree, node: Node, stage: Stage, round_no: int) -> PromptEnvelope:
+def build_prompt(
+    tree: WorkTree,
+    node: Node,
+    stage: Stage,
+    round_no: int,
+    state_dir: Path = state_store.DEFAULT_STATE_DIR,
+) -> PromptEnvelope:
     """Build the single-item prompt envelope for *node* at *stage*.
 
     The item id is ``<node-path>:<stage-name>`` so the judgment that comes back
     is unambiguously routed to the right node+stage. Exactly one item per round
     (one frontier node, one stage) — the control plane's one-artifact-per-turn
     invariant (spec §3).
+
+    *state_dir* is the resolved run-state root (the ``--state-dir`` value, or
+    ``DEFAULT_STATE_DIR`` when unset) — the curated hint paths are composed from
+    it so they point at where the run actually persists state (#1298).
     """
     item = PromptItem(
         id=f"{node.path}:{stage.name}",
         system=_SYSTEM[stage.name],
-        user=_curated_user(tree, node, stage),
+        user=_curated_user(tree, node, stage, state_dir),
         response_format=_response_format(stage),
     )
     return PromptEnvelope(primitive=PRIMITIVE, round=round_no, items=[item])

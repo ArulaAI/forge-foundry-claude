@@ -81,8 +81,14 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _node_dir(state_dir: Path, run_id: str, node_path: str) -> Path:
-    """Return ``<run_dir>/nodes/<node_path>`` after validating *node_path*."""
+def node_dir(state_dir: Path, run_id: str, node_path: str) -> Path:
+    """Return ``<run_dir>/nodes/<node_path>`` after validating *node_path*.
+
+    Public so the prompt builder can compose the ``Reports dir`` hint from the
+    exact same helper that writes each node's stage reports — guaranteeing the
+    hint path always matches reality without duplicating the ``nodes`` segment
+    (#1298).
+    """
     _validate_node_path(node_path)
     return run_dir(state_dir, run_id) / _NODES_DIRNAME / node_path
 
@@ -99,7 +105,7 @@ def save_node(tree: WorkTree, node_path: str, state_dir: Path = DEFAULT_STATE_DI
     crash mid-run leaves a consistent, resumable tree. Returns the path written.
     """
     node = tree.get(node_path)
-    node_file = _node_dir(state_dir, tree.run_id, node_path) / _NODE_FILENAME
+    node_file = node_dir(state_dir, tree.run_id, node_path) / _NODE_FILENAME
     _write_json(node_file, node.model_dump(mode="json"))
     return node_file
 

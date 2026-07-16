@@ -112,6 +112,11 @@ _THRESHOLD_CRITICAL = 9.0
 _THRESHOLD_HIGH = 7.0
 _THRESHOLD_MEDIUM = 4.0
 
+#: Closed severity vocabulary shared with S12 red-team-review's ThreatNode
+#: ingestion (#1295 audit). A per-threat ``severity`` is validated against this
+#: set; the DREAD label (CRITICAL/HIGH/MEDIUM/LOW, lowercased) maps 1:1 into it.
+_SEVERITY_VOCAB = frozenset({"low", "medium", "high", "critical"})
+
 EXPORT_FORMATS = ("markdown", "json", "sarif")
 
 
@@ -164,6 +169,13 @@ class Threat:
     residual_risk: str
     cwe_ids: tuple[str, ...]
     dread: DreadScore
+    # Downstream-ingestion fields (#1295 audit): S12 red-team-review reads
+    # threat.json expecting per-threat ``severity`` / ``file`` / ``line``. If the
+    # payload omits ``severity``, it is derived from the DREAD label so the S12
+    # severity gate reflects the DREAD score instead of a hardcoded "medium".
+    severity: str
+    file: str
+    line: int
 
 
 @dataclass(frozen=True)
@@ -253,6 +265,17 @@ def _parse_threat(raw: object) -> Threat | None:
         cwe_ids = tuple(str(c) for c in cwe_raw)
     else:
         cwe_ids = ()
+
+    dread = _parse_dread(dread_raw)
+    # severity: honour an explicit payload value (validated to S12's closed vocab),
+    # else derive it from the DREAD label so the S12 severity gate is DREAD-driven
+    # rather than defaulting every threat to "medium" (#1295 audit).
+    severity_raw = str(raw.get("severity") or "").strip().lower()
+    severity = severity_raw if severity_raw in _SEVERITY_VOCAB else dread.label.lower()
+
+    line_raw = raw.get("line")
+    line = int(line_raw) if isinstance(line_raw, int | float) else 0
+
     return Threat(
         id=threat_id,
         category=str(raw.get("category") or ""),
@@ -262,7 +285,10 @@ def _parse_threat(raw: object) -> Threat | None:
         mitigation=str(raw.get("mitigation") or ""),
         residual_risk=str(raw.get("residual_risk") or ""),
         cwe_ids=cwe_ids,
-        dread=_parse_dread(dread_raw),
+        dread=dread,
+        severity=severity,
+        file=str(raw.get("file") or "unknown"),
+        line=line,
     )
 
 
@@ -391,6 +417,11 @@ def render_json(report: ThreatReport) -> str:
         threats_out.append(
             {
                 "id": t.id,
+                # S12 red-team-review ingests threat.json expecting these three keys
+                # per threat (severity drives its gate; file/line drive dedup) (#1295).
+                "severity": t.severity,
+                "file": t.file,
+                "line": t.line,
                 "category": t.category,
                 "title": t.title,
                 "description": t.description,

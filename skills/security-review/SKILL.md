@@ -46,7 +46,7 @@ CWE ids and compliance references.
    enumerate the source files, honoring an optional language filter and an optional glob
    (`--file-pattern`). When a PR-diff range is given, narrow the set to the files that range
    changed. If a `--spec` path is given, read it as context for relevance. The result of this
-   phase is one prompt item per source file (id prefix `review:<relative-path>`).
+   phase is one prompt item per source file (id prefix `security:<relative-path>`).
 2. **Judge each prompt item (per-file security lens review).** For each item in
    `round-1-prompts.json` (one item per source file):
    - Read the `system` and `user` fields. They describe a single source file and the security
@@ -67,15 +67,18 @@ CWE ids and compliance references.
      `file` exactly to the file under review; drop any `compliance_refs` not present in the
      loaded `compliance.yaml`. Do **not** wrap the JSON in markdown fences.
    - Collect all responses into a `JudgmentEnvelope` and write it to
-     `round-1-judgments.json` in the same state directory. The envelope format is:
+     `round-1-judgments.json` in the same state directory. **Each item's `id` MUST be
+     copied verbatim from the matching item in `round-1-prompts.json`** — it is
+     `security:<relative-path>` (the `security:` prefix is load-bearing; an item whose
+     id does not match a prompt id is silently skipped, yielding an empty report). The
+     envelope format is:
      ```json
      {
        "schema_version": "1.0",
        "primitive": "security-review",
        "round": 1,
        "items": [
-         {"id": "review:<relative-path>", "response": [<findings array>]},
-         ...
+         {"id": "security:src/auth.py", "response": [<findings array>]}
        ]
      }
      ```

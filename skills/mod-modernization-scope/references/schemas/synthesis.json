@@ -1,0 +1,229 @@
+{
+  "schema_version": "2.2",
+  "specs": [
+    {
+      "spec_id": "spec-customer",
+      "title": "Customer — Modernization Specification",
+      "description": "Extract the Customer bounded context (owner pages + owners table) into an independent service.",
+      "context": "The Owner page navigates to GET /owners/{id}, which reads the owners table. The UI, API, and data layers are currently co-deployed in the monolith.",
+      "business_narrative": "The Customer capability is the clinic's front door: front-desk staff register pet owners and look up their contact details and pets. Modernizing it into an independent service lets the clinic evolve owner management without redeploying the whole monolith.",
+      "kpis": [
+        "A front-desk clerk can register a new owner in under two minutes.",
+        "Owner lookups return in under one second for 95% of requests."
+      ],
+      "business_glossary": [
+        "Owner: a pet's registered guardian and the clinic's primary point of contact.",
+        "Pet: an animal registered under an owner and seen by the clinic."
+      ],
+      "assumptions": [
+        "Front-desk staff access the system from an authenticated clinic workstation.",
+        "Owner records are migrated with their full pet and visit history."
+      ],
+      "business_risks": [
+        "Losing owner history during migration would break visit lookups and erode staff trust.",
+        "Slow owner lookups at the front desk would create check-in queues."
+      ],
+      "ui_mockup": "flowchart TB\n  subgraph OwnerDetailComponent[\"OwnerDetailComponent (Angular)\"]\n    header[\"Owner header: first_name last_name\"]\n    petsList[\"Pets list (repeater)\"]\n    editBtn[\"Edit: button -> owner-edit route\"]\n  end\n  OwnerDetailComponent --> OwnerService[\"OwnerService.getOwner(id)\"]",
+      "requirements": [
+        {
+          "id": "R-001",
+          "statement": "The Customer service exposes GET /owners/{id} returning an owner aggregate.",
+          "scope": "OwnerController",
+          "constraint": "Response must include first_name, last_name, and pets list.",
+          "source": "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:42",
+          "rationale": "The Owner page is the primary read path for the Customer context.",
+          "priority": "must"
+        },
+        {
+          "id": "R-002",
+          "statement": "The owners table is owned exclusively by the Customer service; no other context writes to it.",
+          "scope": "owners",
+          "constraint": "No direct cross-service SQL writes; all mutations go through the Customer service API.",
+          "source": "src/main/resources/db/schema.sql:5",
+          "rationale": "Database ownership is the strangler-fig extraction boundary.",
+          "priority": "must"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "AC-001",
+          "given": "A valid owner id exists in the owners table",
+          "when": "GET /owners/{id} is called",
+          "then": "The response is 200 with the owner aggregate including first_name, last_name, and pets list",
+          "covers": ["R-001"],
+          "verified_by": ["T-001"],
+          "is_parity": true
+        },
+        {
+          "id": "AC-002",
+          "given": "An owner id that does not exist",
+          "when": "GET /owners/{id} is called",
+          "then": "The response is 404 with a structured error body",
+          "covers": ["R-001"],
+          "verified_by": ["T-002"],
+          "is_parity": false
+        },
+        {
+          "id": "AC-003",
+          "given": "Another service attempts a direct SQL write to the owners table",
+          "when": "The write is attempted",
+          "then": "The write is rejected by the database role grant; only the Customer service role has INSERT/UPDATE/DELETE on owners",
+          "covers": ["R-002"],
+          "verified_by": ["T-003"],
+          "is_parity": false
+        }
+      ],
+      "test_scenarios": [
+        {
+          "id": "T-001",
+          "type": "integration",
+          "scenario": "GET /owners/{id} returns owner aggregate for a known id",
+          "preconditions": "Owner with id=1 exists in the test DB",
+          "input": "GET /owners/1",
+          "expected": "HTTP 200, body contains {\"first_name\": \"George\", \"last_name\": \"Franklin\", \"pets\": [...]}",
+          "covers": ["R-001"],
+          "is_parity_oracle": true
+        },
+        {
+          "id": "T-002",
+          "type": "integration",
+          "scenario": "GET /owners/{id} returns 404 for an unknown id",
+          "preconditions": "No owner with id=9999 in the test DB",
+          "input": "GET /owners/9999",
+          "expected": "HTTP 404, body contains {\"error\": \"Owner not found\"}",
+          "covers": ["R-001"],
+          "is_parity_oracle": false
+        },
+        {
+          "id": "T-003",
+          "type": "integration",
+          "scenario": "Direct SQL INSERT to owners table from a non-Customer role is rejected",
+          "preconditions": "Database role 'vet_service_role' is configured",
+          "input": "INSERT INTO owners (first_name, last_name) VALUES ('X', 'Y') executed as vet_service_role",
+          "expected": "PostgreSQL error: permission denied for table owners",
+          "covers": ["R-002"],
+          "is_parity_oracle": false
+        }
+      ],
+      "architecture_decisions": [
+        {
+          "id": "ADR-001",
+          "title": "Front the owners table with a Customer repository port",
+          "context": "The owners table must be exclusively owned by the Customer service to enable extraction.",
+          "decision": "All reads and writes to the owners table go through a CustomerRepository port in the Customer service; no other service may use a direct DB connection to owners.",
+          "consequences": [
+            "The storage engine can change without touching callers.",
+            "A migration shim is needed during the strangler-fig transition."
+          ],
+          "alternatives": [
+            "Shared DB schema — rejected: blocks independent deployment.",
+            "Event sourcing — deferred: too high complexity for this context."
+          ],
+          "affects": ["R-001", "R-002"]
+        }
+      ],
+      "data_field_mappings": [
+        {
+          "legacy": "owners.first_name",
+          "target": "Customer.firstName",
+          "type": "VARCHAR(30) → String",
+          "migration_notes": ""
+        },
+        {
+          "legacy": "owners.last_name",
+          "target": "Customer.lastName",
+          "type": "VARCHAR(30) → String",
+          "migration_notes": ""
+        }
+      ],
+      "api_endpoints": [
+        {
+          "verb": "GET",
+          "path": "/owners/{id}",
+          "request": "Path param: id (integer)",
+          "response": "OwnerAggregate DTO",
+          "status_codes": ["200", "404"],
+          "validation": ["R-001"],
+          "security": ["USER"],
+          "kind": "current",
+          "from_controller": "OwnerController.showOwner"
+        },
+        {
+          "verb": "GET",
+          "path": "/api/owners/{ownerId}",
+          "request": "Path param: ownerId (integer)",
+          "response": "OwnerResponse",
+          "status_codes": ["200", "404"],
+          "validation": ["R-001"],
+          "security": ["USER"],
+          "kind": "target",
+          "from_controller": "OwnerController.showOwner"
+        },
+        {
+          "verb": "POST",
+          "path": "/api/owners",
+          "request": "OwnerCreateRequest",
+          "response": "OwnerResponse",
+          "status_codes": ["201", "400"],
+          "validation": ["R-001"],
+          "security": ["STAFF"],
+          "kind": "target",
+          "from_controller": "OwnerController.processCreationForm"
+        }
+      ],
+      "user_flows": [
+        {
+          "id": "UF-001",
+          "name": "View Owner Detail",
+          "steps": [
+            "User navigates to the Owner List page",
+            "User clicks on an owner's name link",
+            "System calls GET /owners/{id}",
+            "System renders the Owner Detail page with the aggregate"
+          ],
+          "variant": "happy-path",
+          "sequence_diagram": "sequenceDiagram\n  participant UI as OwnerDetailComponent\n  participant API as OwnersController\n  participant SVC as OwnerService\n  participant DB as owners\n  UI->>API: GET /api/owners/{ownerId}\n  API->>SVC: getOwner(ownerId)\n  SVC->>DB: SELECT * FROM owners WHERE id = ?\n  DB-->>SVC: owner row + pets\n  SVC-->>API: OwnerResponse\n  API-->>UI: 200 OwnerResponse"
+        }
+      ],
+      "nfrs": [
+        {
+          "id": "NFR-001",
+          "category": "perf",
+          "requirement": "GET /owners/{id} must respond in < 200ms at p95 under 50 concurrent users.",
+          "source": ""
+        }
+      ],
+      "citations": [
+        "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:42",
+        "src/main/resources/db/schema.sql:5"
+      ],
+      "dod_extra": [
+        "The owners table has no inbound foreign keys from other bounded contexts."
+      ]
+    }
+  ],
+  "adrs": [
+    {
+      "adr_id": "adr-strangler-fig-sequencing",
+      "title": "Adopt strangler-fig extraction sequencing",
+      "status": "Accepted",
+      "context": "The monolith has cross-layer UI to API to DB threads that must be extracted without a big-bang cutover.",
+      "decision": "Extract bounded contexts in dependency-wave order (leaves first), routing traffic through a facade during the transition.",
+      "consequences": [
+        "Each wave is independently deployable and reversible.",
+        "A facade/routing layer must be maintained until the last context is extracted."
+      ],
+      "alternatives": [
+        "Big-bang rewrite — rejected: unacceptable cutover risk.",
+        "Freeze-and-fork — rejected: diverges the two codebases."
+      ],
+      "affected_requirements": [
+        "R-001",
+        "R-002"
+      ],
+      "citations": [
+        "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:42"
+      ]
+    }
+  ]
+}

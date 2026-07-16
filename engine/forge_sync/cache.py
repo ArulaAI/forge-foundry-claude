@@ -44,6 +44,13 @@ def _clone_tag(version: str, dest: Path, *, source_url: str = _DEFAULT_REPO_URL)
         )
 
 
+def default_repo_url() -> str:
+    """The canonical foundry library repo URL — the source used when a manifest
+    omits ``foundry_primitives_source`` (#1284). Public accessor so callers need
+    not reach the private ``_DEFAULT_REPO_URL`` name."""
+    return _DEFAULT_REPO_URL
+
+
 def get_primitives_path(version: str) -> Path:
     """Foundry-library shim — fetch the canonical foundry repo at *version*.
 

@@ -26,7 +26,7 @@ pipeline in-session.
 
 - A modernization engagement starts and the engineer needs the structural shape of a legacy
   schema (hubs, orphans, cycles, line-of-business groupings) before sequencing the rewrite.
-- A reviewer wants the M3 strategist (`/mod-modernization-strategist`) to operate on a
+- A reviewer wants the M3 strategist (`/mod-sql-strategist`) to operate on a
   *current* digest rather than an out-of-date one.
 - A data-flow auditor (S60 `/data-flow-map`) needs PII-classified column metadata anchored to
   a canonical schema view.
@@ -86,7 +86,7 @@ pipeline in-session.
    failures. Surface any dropped-table or line-of-business warnings the CLI emitted on
    stderr — the M1-10 anti-hallucination guard logs every name it rejected for
    transparency. If hotspots are many or cycles are present, recommend running
-   M3 `/mod-modernization-strategist` next.
+   M3 `/mod-sql-strategist` next.
 6. **Non-zero exit (not 7) is a hard stop.** Surface the CLI's stderr and do not fabricate
    a digest. See the exit-code contract under **Invariants** below.
 

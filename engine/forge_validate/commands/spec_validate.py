@@ -57,7 +57,7 @@ from forge_validate._cli_common import (
 @continue_option()
 @judgments_option()
 @state_dir_option()
-def cli(  # noqa: PLR0913, PLR0915
+def cli(  # noqa: PLR0913, PLR0915, PLR0912
     spec_path: str,
     code_path: str,
     test_results_path: str | None,
@@ -106,6 +106,7 @@ def cli(  # noqa: PLR0913, PLR0915
     )
     from primitives._shared.protocol import (  # noqa: PLC0415
         PromptEnvelope,
+        assert_matching_round,
         read_judgments,
         write_prompts,
     )
@@ -146,6 +147,9 @@ def cli(  # noqa: PLR0913, PLR0915
 
         assert judgments is not None  # guaranteed by validate_skill_first_flags
         judgment_envelope = read_judgments(Path(judgments))
+        # Reject a stale prior-round judgments file rather than silently
+        # finalizing and dropping the pending round (#1199).
+        assert_matching_round(judgment_envelope, pipeline.round, path=Path(judgments))
         judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
         if pipeline.round == 1:
@@ -257,7 +261,7 @@ def cli(  # noqa: PLR0913, PLR0915
             else:
                 emit_report(rendered)
 
-            cleanup_state(resolved_state_dir)
+            cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
 
             # Exit code logic
             if report.has_critical_ai_quality:
@@ -293,7 +297,14 @@ def cli(  # noqa: PLR0913, PLR0915
         sys.exit(2)
 
     spec_text = resolved_spec.read_text(encoding="utf-8")
-    acceptance_doc = parse_acceptance(spec_text)
+    try:
+        acceptance_doc = parse_acceptance(spec_text)
+    except ValueError as exc:
+        # A spec with no `## Acceptance` section is a malformed input, not an
+        # internal error — surface it as a clean exit 2, not an unhandled
+        # traceback (exit 1) (#1199).
+        click.echo(f"Error: {exc} (spec: {resolved_spec})", err=True)
+        sys.exit(2)
     criteria = acceptance_doc.criteria
 
     reviewed_files = enumerate_reviewed_files(resolved_code)

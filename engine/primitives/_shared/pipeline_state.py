@@ -109,7 +109,22 @@ def load_intermediate(name: str, state_dir: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def cleanup_state(state_dir: Path) -> None:
-    """Remove the state directory after a successful run."""
-    if state_dir.exists():
-        shutil.rmtree(state_dir)
+def cleanup_state(state_dir: Path, *, explicit: bool = False) -> None:
+    """Remove the state directory after a successful run.
+
+    ``explicit`` marks a caller-supplied ``--state-dir``. When True the directory
+    is preserved (only its transient round files are pruned) — the caller owns it
+    and may be feeding it to a downstream primitive (e.g. S11 security-review →
+    S12 red-team-review reads ``<state-dir>/security.json``, #1292). An
+    auto-created default (``<code>/.state``, ``explicit=False``) is removed whole.
+    """
+    if not state_dir.exists():
+        return
+    if explicit:
+        for name in ("round-1-prompts.json", "pipeline.json"):
+            (state_dir / name).unlink(missing_ok=True)
+        intermediates = state_dir / "intermediates"
+        if intermediates.exists():
+            shutil.rmtree(intermediates)
+        return
+    shutil.rmtree(state_dir)

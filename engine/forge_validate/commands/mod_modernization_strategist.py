@@ -1,4 +1,9 @@
-"""Forge Foundry — ``forge-validate mod-modernization-strategist`` subcommand (M3).
+"""Forge Foundry — ``forge-validate mod-sql-strategist`` subcommand (M3).
+
+The slash command was renamed ``/mod-modernization-strategist`` →
+``/mod-sql-strategist`` in #1326/#1327 (SP5 of epic #1311); the Python module
+name (``mod_modernization_strategist``) is intentionally unchanged to avoid
+import/test churn.
 
 Drives the M3 decomposition pipeline over the M1 ``schema.json`` + M2
 ``stored-procs.json`` digests in ``--context-dir`` and writes the SPEC outputs
@@ -58,7 +63,7 @@ _PLAN_FILENAME = "modernization-plan.md"
 _DIAGRAMS_DIR = "diagrams"
 
 
-@click.command("mod-modernization-strategist")
+@click.command("mod-sql-strategist")
 @click.option(
     "--context-dir",
     "context_dir",
@@ -87,7 +92,7 @@ def cli(
     judgments: str | None,
     state_dir: str | None,
 ) -> None:
-    """Decompose a legacy SQL database into bounded contexts (/mod-modernization-strategist).
+    """Decompose a legacy SQL database into bounded contexts (/mod-sql-strategist).
 
     Reads the M1 ``schema.json`` + M2 ``stored-procs.json`` digests, runs the
     deterministic Stages A-D, and renders the Mermaid strategy diagrams.
@@ -158,7 +163,7 @@ def cli(
         _render_outputs(plan, narratives, resolved_output)
 
         # --- Clean up state -------------------------------------------------
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
         return
 
     # =========================================================================
@@ -212,16 +217,16 @@ def cli(
         if not prompt_items:
             narratives = apply_narrative_judgments(plan, {})
             _render_outputs(plan, narratives, resolved_output)
-            cleanup_state(resolved_state_dir)
+            cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
             click.echo(
-                "[mod-modernization-strategist] decomposition produced no bounded "
+                "[mod-sql-strategist] decomposition produced no bounded "
                 "contexts; rendered deterministic outputs. No judgments needed.",
                 err=True,
             )
             sys.exit(0)
 
         envelope = PromptEnvelope(
-            primitive="mod-modernization-strategist",
+            primitive="mod-sql-strategist",
             round=1,
             items=prompt_items,
         )
@@ -232,7 +237,7 @@ def cli(
         # Save pipeline state
         save_state(
             PipelineState(
-                primitive="mod-modernization-strategist",
+                primitive="mod-sql-strategist",
                 round=1,
                 completed_stages=["A", "B", "C", "D"],
                 next_stage="E_continue",

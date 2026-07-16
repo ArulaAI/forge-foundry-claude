@@ -157,3 +157,25 @@ def read_judgments(path: Path) -> JudgmentEnvelope:
             "round-N-prompts.json (see its `_schema` hint and the skill-first "
             "protocol docs in docs/skill-first-protocol.md)."
         ) from exc
+
+
+def assert_matching_round(envelope: JudgmentEnvelope, expected_round: int, *, path: Path) -> None:
+    """Reject a judgments file whose ``round`` does not match the pipeline's.
+
+    Feeding a **stale prior-round** judgments file to ``--continue`` (e.g. the
+    round-1 file when the pipeline is awaiting round-2 judgments) otherwise
+    silently finalizes: none of the stale items match the current round's prompt
+    ids, so the round is dropped and the run exits 0 with an incomplete report
+    (#1199). This makes the mismatch a loud, actionable error instead. It raises
+    :class:`MalformedJudgmentsError` (a ``click.ClickException`` — clean stderr
+    message, exit 1), consistent with how :func:`read_judgments` reports any other
+    bad-judgments input; no traceback, no silent finalize.
+    """
+    if envelope.round != expected_round:
+        raise MalformedJudgmentsError(
+            f"stale/wrong-round judgments file {path}: it is for round "
+            f"{envelope.round}, but the pipeline is awaiting round {expected_round}. "
+            f"Judge the current round's round-{expected_round}-prompts.json and re-invoke "
+            "with that round's judgments — do not feed a prior round's file (which would "
+            "silently drop the pending round)."
+        )

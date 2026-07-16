@@ -58,9 +58,12 @@ It does **not** reproduce the synthesis pipeline in-session.
    or other non-mainframe codebase exits `6` with "no log catalog registered for
    flavor 'X'; v1 supports: cics_cobol" — that is a clean, informative stop, not
    a crash. If the user has not run M5, point them at `./PLAYBOOK.md` first. When
-   no playbook exists, fall back to `--code-root` (a mainframe source tree the
-   Phase A ingest recons via `primitives._shared.discovery`). Without either
-   readable input the CLI exits `2`. Then settle the scenario arc (`--scenario`,
+   no playbook exists, fall back to `--code-root` (a **mainframe** source tree the
+   Phase A ingest recons via `primitives._shared.discovery`). A `--code-root` walk
+   now detects its real platform flavor too, so a **non-mainframe** source tree
+   exits `6` consistently with the same "no log catalog registered" message
+   (#1198) — it no longer masquerades as `cics_cobol`. Without either readable
+   input the CLI exits `2`. Then settle the scenario arc (`--scenario`,
    default `incident`), traffic volume (`--scale`, default `mid`), and a `--seed`
    if reproducibility matters (suggest `--seed 42` for the BankDemo reference).
    Map any user-named options to the CLI flags listed under **How to invoke** below.

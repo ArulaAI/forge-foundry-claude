@@ -340,34 +340,49 @@ def _render_conversions_section(context_dir: Path) -> list[str]:
         parts.append("")
         return parts
 
-    # Discover SP directories (each child directory is one SP)
-    sp_dirs = sorted(p for p in conv_dir.iterdir() if p.is_dir())
-    if not sp_dirs:
+    # Discover SP conversion plans. M4 writes the plan JSON in one of two layouts
+    # (#1345): the NESTED form `conversions/<sp>/conversion-plan.json` (one dir per
+    # SP), and the FLAT form `conversions/conversion-plan.json` directly under the
+    # conversions dir (when M4 is pointed at a flat `--output-dir`, as the workbench
+    # playbook instructs). We must discover both — the flat layout was previously
+    # rendered as "No SP conversion artifacts found", silently dropping a completed
+    # conversion from the headline report. A conversion "unit" is any directory that
+    # carries a `conversion-plan.json`; this includes the conversions dir itself for
+    # the flat case. Scaffold-only subdirs (e.g. `<sp>/app/routers/...`) carry no
+    # plan JSON and are correctly excluded (#1197 6b).
+    plan_units: list[tuple[str, Path, str]] = []  # (plan-link subdir, plan_json, section-slug)
+    # Flat: a plan JSON directly under conversions/.
+    if (conv_dir / _CONVERSION_PLAN_JSON).is_file():
+        plan_units.append(("", conv_dir / _CONVERSION_PLAN_JSON, conv_dir.name))
+    # Nested: one plan JSON per SP subdirectory.
+    for p in sorted(conv_dir.iterdir()):
+        if p.is_dir() and (p / _CONVERSION_PLAN_JSON).is_file():
+            plan_units.append((p.name, p / _CONVERSION_PLAN_JSON, p.name))
+
+    if not plan_units:
         parts.append("_No SP conversion artifacts found under `conversions/`._")
         parts.append("")
         return parts
 
-    parts.append(f"**Conversions available:** {len(sp_dirs)}")
+    parts.append(f"**Conversions available:** {len(plan_units)}")
     parts.append("")
 
     # Summary table across all SPs
     summary_rows: list[Sequence[str]] = []
     sp_details: list[tuple[str, dict[str, object]]] = []
 
-    for sp_dir in sp_dirs:
-        plan_json = sp_dir / _CONVERSION_PLAN_JSON
-        if not plan_json.is_file():
-            # Some SP dirs may lack the JSON if M4 ran for that SP only partially
-            summary_rows.append([sp_dir.name, "—", "—", "—"])
-            continue
+    for link_subdir, plan_json, slug in plan_units:
         raw: dict[str, object] = json.loads(plan_json.read_text(encoding="utf-8"))
-        sp_name = str(raw.get("sp_name", sp_dir.name))
+        sp_name = str(raw.get("sp_name", slug))
         target = str(raw.get("target", "unknown"))
         effort_raw = raw.get("effort", {})
         effort_size = str(effort_raw.get("size", "?") if isinstance(effort_raw, dict) else "?")
-        plan_link = f"[plan.md](conversions/{sp_dir.name}/plan.md)"
+        # plan.md sits beside conversion-plan.json — in the SP subdir (nested) or
+        # directly under conversions/ (flat).
+        plan_rel = f"conversions/{link_subdir}/plan.md" if link_subdir else "conversions/plan.md"
+        plan_link = f"[plan.md]({plan_rel})"
         summary_rows.append([sp_name, target, effort_size, plan_link])
-        sp_details.append((sp_dir.name, raw))
+        sp_details.append((slug, raw))
 
     parts.append(md_table(["Procedure", "Target", "Effort", "Details"], summary_rows))
     parts.append("")

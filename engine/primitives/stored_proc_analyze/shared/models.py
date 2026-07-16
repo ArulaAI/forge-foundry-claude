@@ -32,6 +32,14 @@ IOShape: TypeAlias = Literal[
     "writes_only",
     "cursor_heavy",
     "cross_db_link",
+    # ``unknown`` is the honest classification for an *unparseable* SP whose
+    # AST could not be walked (#1343): the read/write breakdown is genuinely
+    # undetermined, so we must not claim ``reads_only`` for a proc that may
+    # write. It mirrors the ``"unknown"`` member the SideEffect vocabulary
+    # already carries. Unparseable SPs are risk-scored via the dedicated
+    # sentinel path (``score_conversion_risk_for_unparseable``), so this value
+    # never feeds the parsed-SP risk weighting.
+    "unknown",
 ]
 
 _ALL_IO_SHAPES: tuple[IOShape, ...] = (
@@ -40,6 +48,7 @@ _ALL_IO_SHAPES: tuple[IOShape, ...] = (
     "writes_only",
     "cursor_heavy",
     "cross_db_link",
+    "unknown",
 )
 
 # ---------------------------------------------------------------------------
@@ -51,7 +60,14 @@ SideEffect: TypeAlias = Literal[
     "file",
     "external",
     "dynamic_sql",
+    "audit_write",
     "none",
+    # ``unknown`` is the honest surface set for an *unparseable* SP with no
+    # regex-detected mechanism (#1343): the absent AST means ``audit_write``
+    # (and any write the raw-body regexes don't model) could not be checked,
+    # so we must not claim ``["none"]`` ("we looked and found nothing") for a
+    # proc we could not fully read. Mirrors the ``IOShape`` ``unknown`` member.
+    "unknown",
 ]
 
 _ALL_SIDE_EFFECTS: tuple[SideEffect, ...] = (
@@ -59,7 +75,9 @@ _ALL_SIDE_EFFECTS: tuple[SideEffect, ...] = (
     "file",
     "external",
     "dynamic_sql",
+    "audit_write",
     "none",
+    "unknown",
 )
 
 # ---------------------------------------------------------------------------
@@ -142,6 +160,14 @@ class RiskScore(BaseModel):
     direction). This axis differentiates the non-dynamic-SQL population so
     that a 6-table ETL procedure does not tie a trivial single-table CRUD
     wrapper at zero.
+
+    ``audit_write`` (#1293) counts the audit / log / notification / outbox
+    tables the SP writes to (capped at ``_PER_AXIS_CAP``) — a data-integrity
+    hazard distinct from plain domain-table writes: the migrator must preserve
+    the audit-trail / outbox write semantics transactionally across the
+    strangler boundary. It fires as both a ``SideEffect`` surface and this
+    dedicated axis so a multi-table side-effecting writer out-ranks a same-size
+    pure-domain writer.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -152,6 +178,14 @@ class RiskScore(BaseModel):
     cursor_depth: int = Field(ge=0)
     dynamic_sql: int = Field(ge=0)
     write_breadth: int = Field(ge=0)
+    # Defaulted to 0 (not required) so a StoredProcDigest persisted by an M2
+    # that predates #1293 still loads — the missing field means "no audit-write
+    # detection ran", whose truthful value is 0. Freshly-scored digests always
+    # write it explicitly via `score_conversion_risk`. (The other axes are
+    # required because they existed from schema_version 1.0; audit_write was
+    # added mid-1.0, so a default preserves on-disk backward compatibility
+    # without a schema-version bump.)
+    audit_write: int = Field(default=0, ge=0)
     total: int = Field(ge=0)
 
 

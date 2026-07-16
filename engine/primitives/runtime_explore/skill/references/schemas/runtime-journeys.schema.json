@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RuntimeJourneys",
+  "description": "The final runtime_explore machine artifact (runtime-journeys.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "primitive", "base_url", "generated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "primitive": {"const": "runtime-explore"},
+    "base_url": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "screens": {"type": "array", "items": {"$ref": "#/definitions/screen"}},
+    "nav_edges": {"type": "array", "items": {"$ref": "#/definitions/navEdge"}},
+    "journeys": {"type": "array", "items": {"$ref": "#/definitions/journey"}},
+    "external_edges": {"type": "array", "items": {"$ref": "#/definitions/externalEdge"}},
+    "budget": {"type": "object"},
+    "role_coverage": {
+      "type": "object",
+      "description": "Multi-role runs only (#1563): role name → reachable-screen count. Omitted for a single-perspective run.",
+      "additionalProperties": {"type": "integer"}
+    }
+  },
+  "definitions": {
+    "formField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {"type": "string"},
+        "type": {"type": "string"},
+        "required": {"type": "boolean"}
+      }
+    },
+    "form": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string"},
+        "fields": {"type": "array", "items": {"$ref": "#/definitions/formField"}}
+      }
+    },
+    "screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "url"],
+      "properties": {
+        "id": {"type": "string"},
+        "url": {"type": "string"},
+        "title": {"type": "string"},
+        "screenshot": {"type": "string"},
+        "forms": {"type": "array", "items": {"$ref": "#/definitions/form"}},
+        "reached_via": {"type": "string", "enum": ["crawl", "agent"]},
+        "auth_required": {"type": "boolean"},
+        "roles": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Multi-role runs only (#1563): the role(s) whose crawl reached this screen. Omitted when empty."
+        }
+      }
+    },
+    "navEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "trigger"],
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "trigger": {"type": "string"},
+        "label": {"type": "string"},
+        "kind": {"type": "string"}
+      }
+    },
+    "externalEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to_url"],
+      "properties": {
+        "from": {"type": "string"},
+        "to_url": {"type": "string"},
+        "not_followed": {"type": "boolean"}
+      }
+    },
+    "journey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "persona", "goal", "path"],
+      "properties": {
+        "id": {"type": "string"},
+        "persona": {"type": "string"},
+        "goal": {"type": "string"},
+        "path": {"type": "array", "items": {"type": "string"}},
+        "narrative": {"type": "string"},
+        "reached_via": {"type": "string", "enum": ["crawl", "agent"]}
+      }
+    }
+  }
+}

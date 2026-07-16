@@ -106,7 +106,7 @@ implementations.
    notes, the side-effect mapping table, the top test cases, and a walk of each
    scaffold file's role and its `TODO(<sp>)` markers. Recommend the next
    highest-risk SPs as the following conversion candidates (skip this when M4 runs
-   inside the M0 `/mod-legacy-modernization` orchestrator — M0 owns the top-N loop).
+   inside the M0 `/mod-sql-modernization` orchestrator — M0 owns the top-N loop).
 6. **Non-zero exit (not 7) is a hard stop.** Surface the CLI's stderr and do not
    fabricate a plan. See the exit-code contract under **Invariants** below.
 
@@ -168,7 +168,7 @@ effort factors), and the per-target skeleton tree (e.g. `pom.xml` + `*.java` for
   line count), plus per-target adjustment — surfaced in `factors`. Calibration in
   `docs/m4-effort-calibration.md`.
 - **§3.4 sub-call deferred to T1.5** — C4 `/code-review` on emitted scaffold not wired in T1.
-- **Single-SP conversion only** — batch is M0 (`/mod-legacy-modernization`).
+- **Single-SP conversion only** — batch is M0 (`/mod-sql-modernization`).
 - Exit codes: `0` success; `2` `--sp` not in M2 digest, required upstream digest (`schema.json` /
   `stored-procs.json`) missing or unparseable, or the `--continue` judgments envelope lacks the
   expected item; `7` `--extract-only` succeeded — prompts written, body must judge and call

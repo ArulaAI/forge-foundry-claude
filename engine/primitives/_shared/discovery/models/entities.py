@@ -216,6 +216,17 @@ EntryPointKind: TypeAlias = Literal[
     "cli_command",
     "scheduled_trigger",
     "web_route",
+    # Track B (#1427) — the four unified entry-point classes broadened onto the
+    # closed Literal so every inbound trigger (batch job, scheduled/cron task,
+    # CLI entry, message consumer, external integration / webhook / SOAP) is
+    # captured with the same shape. Additive — the historical values above stay.
+    "batch",
+    "scheduled",
+    "cli",
+    "messaging",
+    "integration",
+    "webhook",
+    "soap",
 ]
 
 _ALL_ENTRY_POINT_KINDS: tuple[EntryPointKind, ...] = (
@@ -224,6 +235,13 @@ _ALL_ENTRY_POINT_KINDS: tuple[EntryPointKind, ...] = (
     "cli_command",
     "scheduled_trigger",
     "web_route",
+    "batch",
+    "scheduled",
+    "cli",
+    "messaging",
+    "integration",
+    "webhook",
+    "soap",
 )
 
 # ---------------------------------------------------------------------------
@@ -379,6 +397,13 @@ class EntryPoint(BaseModel):
     ``security_requirements`` and ``ui_elements`` carry forward
     open-ended so consumers can extend without a Literal edit per
     flavour.
+
+    Track B (#1427): ``trigger`` carries the **real** inbound value — the cron
+    expression for a ``scheduled`` job, the topic / queue for a ``messaging``
+    consumer, the route path for an ``api_route`` / ``webhook``, the command for
+    a ``cli`` entry. ``source`` is the ``file:line`` provenance of the
+    declaration. Both default empty (the frozen model stays backward-compatible;
+    the historical HTTP/CICS records simply carry ``""``).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -386,6 +411,8 @@ class EntryPoint(BaseModel):
     name: str
     kind: EntryPointKind
     target_unit: str = ""
+    trigger: str = ""
+    source: str = ""
     security_requirements: list[str] = Field(default_factory=list)
     ui_elements: list[str] = Field(default_factory=list)
 

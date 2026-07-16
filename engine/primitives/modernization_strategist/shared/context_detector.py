@@ -22,7 +22,7 @@ three-phase approach that resists hub absorption (#887):
    with LoB ``crm``) from absorbing ``orders`` (LoB ``sales``) merely because
    ``orders`` carries a FK to ``customers``.
 
-3. **Max-size cap with LoB-based splitting (cap = 6 tables):** After the first
+3. **Max-size cap with LoB-based splitting (cap = 12 tables, #1197 6c-i):** After the first
    two phases, any component exceeding ``_MAX_CONTEXT_SIZE`` that contains tables
    with two or more *distinct* LoB labels is split into per-LoB sub-clusters. The
    remainder (tables in the oversize component that share no LoB, or whose LoB was
@@ -57,7 +57,12 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 #: A component with more than this many tables is eligible for LoB-split.
-_MAX_CONTEXT_SIZE: int = 6
+#: Raised 6→12 (#1197 6c-i): a 6-table cap fired too often, splitting genuinely
+#: cohesive large components (or multi-LoB components a strategist would keep as
+#: one domain) into 8+ tiny contexts vs the expected ~3-4. A bounded context of
+#: up to 12 tables is a realistic BFSI domain size; only truly oversized (>12)
+#: components with 2+ distinct LoBs are split, keeping the decomposition coarse.
+_MAX_CONTEXT_SIZE: int = 12
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +192,41 @@ def detect_contexts(schema: SchemaDigest, procs: StoredProcDigest) -> list[Bound
                         rationale=_rationale(cluster, split=True),
                     )
                 )
+
+    # ------------------------------------------------------------------
+    # Phase 4 — Orphan coarsening (#1197 6c-i).
+    # ------------------------------------------------------------------
+    # Collapse genuinely-orphan singleton contexts — a lone table with NO LoB and
+    # (by construction) no FK/SP link, since either would have merged it in Phase
+    # 2 — into ONE residual "uncategorized" context. Many singleton orphans
+    # fragment the map (the reported 8-vs-~3-4 blow-up) without adding domain
+    # signal; a single holding bucket is more useful to a strategist and keeps the
+    # decomposition coarse. Only merges when 2+ orphans exist; a lone orphan keeps
+    # its own context.
+    orphans = [
+        c for c in final_contexts if len(c.tables) == 1 and lob_by_table.get(c.tables[0]) is None
+    ]
+    if len(orphans) >= 2:  # noqa: PLR2004
+        orphan_tables = sorted(t for c in orphans for t in c.tables)
+        final_contexts = [c for c in final_contexts if c not in orphans]
+        # The residual bucket must not collide with a real context named after a
+        # literal ``uncategorized`` LoB label (a duplicate name silently corrupts
+        # downstream risk aggregation + node ids, which key on ctx.name). Pick the
+        # first free name.
+        taken = {c.name for c in final_contexts}
+        residual_name = "uncategorized"
+        while residual_name in taken:
+            residual_name += "-residual"
+        final_contexts.append(
+            BoundedContext(
+                name=residual_name,
+                tables=tuple(orphan_tables),
+                rationale=(
+                    "residual bucket: tables with no LoB classification and no FK/SP linkage "
+                    "(grouped to keep the decomposition coarse, #1197 6c)"
+                ),
+            )
+        )
 
     return sorted(final_contexts, key=lambda c: c.name)
 

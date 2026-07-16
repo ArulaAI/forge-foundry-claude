@@ -623,6 +623,43 @@ def _load_entry_point_flavors() -> None:
 
 _load_entry_point_flavors()
 
+# ---------------------------------------------------------------------------
+# S61 web flavors — added to FLAVOR_PACKS only (not FLAVORS, which is the
+# mainframe-closed registry guarded by test_shared_discovery_flavor_cics_cobol).
+# FLAVOR_PACKS is the open extension point used by functional_map/recon.py.
+# ---------------------------------------------------------------------------
+
+from primitives._shared.discovery.flavor.web_angular import WebAngularFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_django import WebDjangoFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_express_node import (  # noqa: E402
+    WebExpressNodeFlavor,
+)
+from primitives._shared.discovery.flavor.web_hybrid_jsp_spa import (  # noqa: E402
+    WebHybridJspSpaFlavor,
+)
+from primitives._shared.discovery.flavor.web_jsf import WebJsfFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_rails import WebRailsFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_react_next import WebReactNextFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_spring import WebSpringFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_struts import WebStrutsFlavor  # noqa: E402
+from primitives._shared.discovery.flavor.web_vue import WebVueFlavor  # noqa: E402
+
+# The three hybrid/SPA packs' detect() returns 'none' (a rank-0 "definitely not me"
+# signal, weaker than Confidence's 'low' — recon maps it via _CONFIDENCE_RANK.get(.,0)),
+# so their detect() is annotated the wider ``str``, which the FlavorParser Protocol
+# (detect -> Confidence) does not structurally accept. The runtime contract is honored
+# (the values are still 'high'/'none'); the type: ignore scopes the Protocol-vs-str gap.
+FLAVOR_PACKS.setdefault("web_hybrid_jsp_spa", WebHybridJspSpaFlavor())  # type: ignore[arg-type]
+FLAVOR_PACKS.setdefault("web_express_node", WebExpressNodeFlavor())
+FLAVOR_PACKS.setdefault("web_react_next", WebReactNextFlavor())
+FLAVOR_PACKS.setdefault("web_angular", WebAngularFlavor())  # type: ignore[arg-type]
+FLAVOR_PACKS.setdefault("web_vue", WebVueFlavor())  # type: ignore[arg-type]
+FLAVOR_PACKS.setdefault("web_django", WebDjangoFlavor())
+FLAVOR_PACKS.setdefault("web_struts", WebStrutsFlavor())
+FLAVOR_PACKS.setdefault("web_jsf", WebJsfFlavor())
+FLAVOR_PACKS.setdefault("web_spring", WebSpringFlavor())
+FLAVOR_PACKS.setdefault("web_rails", WebRailsFlavor())
+
 
 __all__ = [
     "ENTRY_POINT_GROUP",

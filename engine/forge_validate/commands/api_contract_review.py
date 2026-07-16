@@ -9,6 +9,13 @@ Two dispatch modes:
   - Skill-first ``--continue``: loads intermediates + judgments, applies findings,
     runs confidence filter, renders report, exits 0/4/5.
 
+Degraded-output mode (``--degraded-on-missing``):
+  - When the contract path is absent AND ``--degraded-on-missing`` is set, writes a
+    well-formed empty ``api-contract.json`` at ``--degraded-output`` and exits 0.
+  - Malformed-but-present contracts still exit 3 (not degraded).
+  - The degraded artifact is SP2-adapter-parseable by ``adapters/api.py::to_endpoints``
+    and ``to_digest`` (empty operations list → empty interfaces / endpoints).
+
 The AI-quality sub-call (C10+C11, §3.4) is skipped in skill-first mode — a
 subprocess call from within the skill body would violate the protocol
 boundary. A stderr note is printed instead.
@@ -16,6 +23,7 @@ boundary. A stderr note is printed instead.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -116,6 +124,25 @@ from forge_validate._cli_common import validate_git_ref
     default=False,
     help="Skip sub-call rule §3.4 (C10 + C11 audit).",
 )
+@click.option(
+    "--degraded-on-missing",
+    is_flag=True,
+    default=False,
+    help=(
+        "Graceful-skip mode: when the contract path is absent, emit an empty-but-valid "
+        "api-contract.json and exit 0. Malformed-but-present contracts still exit 3. "
+        "Use in the app-mod chain when the API surface may be thin or absent (#1404)."
+    ),
+)
+@click.option(
+    "--degraded-output",
+    type=click.Path(),
+    default=None,
+    help=(
+        "Path to write the degraded api-contract.json when --degraded-on-missing fires. "
+        "Defaults to api/api-contract.json relative to the contract path's parent directory."
+    ),
+)
 @extract_only_option()
 @continue_option()
 @judgments_option()
@@ -131,6 +158,8 @@ def cli(  # noqa: PLR0913
     confidence_threshold: str,
     max_severity: str | None,
     skip_ai_quality: bool,  # accepted for CLI compat; sub-call skipped in skill-first mode
+    degraded_on_missing: bool,
+    degraded_output: str | None,
     extract_only: bool,
     continue_: bool,
     judgments: str | None,
@@ -152,8 +181,9 @@ def cli(  # noqa: PLR0913
     in-session judgment.
 
     Exit codes:
-    - 0: success
-    - 2: contract path not found (checked before --extract-only/--continue precondition)
+    - 0: success (or degraded-on-missing clean skip)
+    - 2: contract path not found (checked before --extract-only/--continue precondition;
+         suppressed when --degraded-on-missing is set)
     - 3: format unresolvable
     - 4: findings exceed --max-severity threshold
     - 5: C10/C11 sub-call returned critical findings (after dedup)
@@ -162,14 +192,21 @@ def cli(  # noqa: PLR0913
     from typing import cast as _cast  # noqa: PLC0415
 
     # --- Validate contract path existence BEFORE the precondition check (#890) ---
-    # Exit 2 when the contract path does not exist.  The --list-formats flag is an
-    # eager option (forge_validate._cli_common.list_formats_option, #885) that
-    # prints + exits 0 *before* this body runs and before Click requires the
+    # Exit 2 when the contract path does not exist, UNLESS --degraded-on-missing is set
+    # (in which case we emit a well-formed empty artifact and exit 0 — #1404).
+    # The --list-formats flag is an eager option (forge_validate._cli_common.list_formats_option,
+    # #885) that prints + exits 0 *before* this body runs and before Click requires the
     # positional, so it still works without a real path.  This existence check
     # runs before validate_skill_first_flags so a typo'd path yields "contract
     # path not found" rather than the skill-first precondition message.
     resolved_contract = Path(contract_path)
     if not resolved_contract.exists():
+        if degraded_on_missing:
+            _emit_degraded_artifact(
+                contract_path=resolved_contract,
+                degraded_output=Path(degraded_output) if degraded_output else None,
+            )
+            return  # _emit_degraded_artifact calls sys.exit(0)
         click.echo(f"Error: contract path not found: {resolved_contract}", err=True)
         sys.exit(2)
 
@@ -204,6 +241,7 @@ def cli(  # noqa: PLR0913
             max_severity=_cast("Literal['high', 'critical'] | None", max_severity),
             format_=format_,
             resolved_output_file=resolved_output_file,
+            explicit=(state_dir is not None),
         )
         return  # _run_continue calls sys.exit
 
@@ -227,6 +265,64 @@ def cli(  # noqa: PLR0913
         "api-contract-review requires --extract-only (emit prompts) or "
         "--continue --judgments <path> (apply judgments). The CLI does not call an LLM."
     )
+
+
+# ---------------------------------------------------------------------------
+# Degraded-output helper (#1404)
+# ---------------------------------------------------------------------------
+
+#: The well-formed empty artifact emitted by --degraded-on-missing.
+#: Shape matches what ``primitives._shared.modernization.adapters.api.to_endpoints``
+#: and ``to_digest`` expect — all optional fields, empty collections.
+_DEGRADED_ARTIFACT: dict[str, object] = {
+    "status": "degraded",
+    "reason": "no_contract_document",
+    "contract_path": "",
+    "format": None,
+    "operations": [],
+    "schemas": [],
+    "flavor": "rest",
+    "debt": [],
+    "security_schemes": [],
+}
+
+
+def _emit_degraded_artifact(
+    *,
+    contract_path: Path,
+    degraded_output: Path | None,
+) -> None:
+    """Emit an empty-but-valid api-contract.json and exit 0.
+
+    Called when ``--degraded-on-missing`` is set and the contract path is absent.
+    The artifact shape is SP2-adapter-parseable: ``to_endpoints`` and ``to_digest``
+    both safe-default every missing key, so an empty ``operations`` list yields an
+    empty endpoint list / empty digest without raising.
+
+    The output path defaults to ``api/api-contract.json`` adjacent to the
+    contract_path's parent directory.  When ``degraded_output`` is supplied
+    explicitly, it takes precedence.
+    """
+    artifact = dict(_DEGRADED_ARTIFACT)
+    artifact["contract_path"] = str(contract_path)
+
+    if degraded_output is not None:
+        out_path = degraded_output
+    else:
+        # Default: place beside where the contract would have lived —
+        # i.e. <contract_path.parent>/api/api-contract.json.
+        out_path = contract_path.parent / "api" / "api-contract.json"
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+
+    click.echo(
+        f"[api-contract-review] degraded: no contract document at {contract_path}; "
+        f"emitted empty api-contract.json at {out_path} (status=degraded, "
+        "reason=no_contract_document). API surface treated as absent.",
+        err=True,
+    )
+    sys.exit(0)
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +492,7 @@ def _run_continue(
     max_severity: Literal["high", "critical"] | None,
     format_: str,
     resolved_output_file: Path | None,
+    explicit: bool = False,
 ) -> None:
     """--continue: apply judgments, run confidence filter, render, exit 0/4/5."""
     from datetime import UTC, datetime  # noqa: PLC0415
@@ -492,7 +589,7 @@ def _run_continue(
         emit_report(rendered)
 
     # --- Clean up state ---
-    cleanup_state(resolved_state_dir)
+    cleanup_state(resolved_state_dir, explicit=explicit)
 
     # --- Exit code logic ---
     # Exit 4: any finding at or above --max-severity

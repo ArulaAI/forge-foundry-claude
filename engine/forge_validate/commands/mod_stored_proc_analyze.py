@@ -243,7 +243,7 @@ def cli(  # noqa: PLR0915
         )
 
         # --- Clean up state -------------------------------------------------
-        cleanup_state(resolved_state_dir)
+        cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
         return
 
     # =========================================================================
@@ -399,7 +399,7 @@ def cli(  # noqa: PLR0915
                 output_dir=resolved_output,
                 format_=format_,
             )
-            cleanup_state(resolved_state_dir)
+            cleanup_state(resolved_state_dir, explicit=(state_dir is not None))
             click.echo(
                 "[mod-stored-proc-analyze] no parseable stored procedures to "
                 "classify; rendered deterministic fallback. No judgments needed.",
@@ -484,6 +484,9 @@ def _render_digest(
         score_conversion_risk,
         score_conversion_risk_for_unparseable,
     )
+    from primitives.stored_proc_analyze.shared.side_effects import (  # noqa: PLC0415
+        audit_write_tables,
+    )
 
     stored_procs: list[StoredProc] = []
 
@@ -512,6 +515,7 @@ def _render_digest(
                 profile=profile,
                 io_shape=sp_io_shape,
                 side_effects=sp_side_effects,
+                audit_write_count=len(audit_write_tables(parsed_sp)),
             )
 
         # Anti-hallucination guard (M2-11) — defence-in-depth

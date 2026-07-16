@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-foundry-claude-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bundled deterministic engine for the forge-foundry-claude plugin (vendored)."
 requires-python = ">=3.11"
 dependencies = [

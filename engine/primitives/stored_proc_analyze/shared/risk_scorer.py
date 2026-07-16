@@ -25,7 +25,7 @@ confidence-gate calibration is the prior art the design borrows from:
 numbers".
 
 Stage F is **deterministic** — no LLM call, no I/O, no randomness. The
-function is pure given ``(profile, io_shape, side_effects)``. This is
+function is pure given ``(profile, io_shape, side_effects, audit_write_count)``. This is
 the contract every downstream consumer relies on: re-scoring an
 unchanged digest must produce byte-identical output so the orchestrator
 can short-circuit on cached digests without re-walking the pipeline.
@@ -52,7 +52,7 @@ with ``table_touch_count=6``, ``io_shape="reads_writes"``) scores
 strictly above a trivial single-table CRUD wrapper with the same
 cyclomatic complexity and no other risk signals.
 
-**Weight matrix (v2, #886):**
+**Weight matrix (v3, #886 write_breadth; #1197 6a write_breadth 2→4; #1293 audit_write):**
 
 .. code-block:: text
 
@@ -61,10 +61,11 @@ cyclomatic complexity and no other risk signals.
           + cursor_depth * 4  (5 if cursor_heavy, else 0)
           + dynamic_sql  * 3  (5 if dynamic_sql present, else 0)
           + cross_db     * 4  (5 if cross_db_link, else 0)   [folded into total]
-          + write_breadth * 2 (table_touch_count // 2 + 1 if reads_writes, capped at 5)
+          + write_breadth * 4 (table_touch_count // 2 + 1 if reads_writes, capped at 5)  [#1197 6a]
+          + audit_write  * 2  (count of audit/log/notification/outbox writes, cap 5)  [#1293]
 
-    max_parsed = 5*(3+2+4+3+2) = 70  (cursor/cross-db mutually exclusive)
-    UNPARSEABLE_RISK_SENTINEL = 100   (> 70, human-readable, unambiguous)
+    max_parsed = 5*(3+2+4+3+4+2) = 90  (cursor/cross-db mutually exclusive)
+    UNPARSEABLE_RISK_SENTINEL = 120   (> 90, human-readable, unambiguous)
 """
 
 from __future__ import annotations
@@ -156,17 +157,37 @@ _READS_WRITES_MODIFIER: int = 1
 
 # Composite weights: per-component multipliers folded into ``composite``
 # and ``total``. The weights mirror the design-spec rationale: cursor
-# depth and cross-DB are the highest because they imply architectural
-# rework, dynamic SQL is high because of the security review burden,
-# side-effects and write_breadth are moderate (mapping to a target-
-# framework API / expanding the migration surface is usually mechanical
-# but non-trivial), and complexity is the baseline indicator.
+# depth, cross-DB, and write_breadth (#1197 6a) are the highest — cursor/
+# cross-DB imply architectural rework, and coordinating side-effect writes
+# across many tables is a data-integrity / transaction-consistency hazard of
+# the same order. Dynamic SQL is high because of the security review burden,
+# side-effects are moderate (mapping to a target-framework API is usually
+# mechanical but non-trivial), and complexity is the baseline indicator.
 _WEIGHT_COMPLEXITY: int = 3
 _WEIGHT_SIDE_EFFECTS: int = 2
 _WEIGHT_CURSOR_DEPTH: int = 4
 _WEIGHT_DYNAMIC_SQL: int = 3
 _WEIGHT_CROSS_DB: int = 4
-_WEIGHT_WRITE_BREADTH: int = 2  # (#886) write-surface breadth weight
+# (#886, recalibrated #1197 6a) Write-surface breadth is a TOP-TIER weight (4,
+# matching cursor_depth/cross_db) — coordinating side-effect writes across many
+# tables is a data-integrity / transaction-consistency migration hazard on par
+# with an architectural rework, not a "moderate" mechanical remap. Raising it
+# from 2→4 lets a genuinely multi-table side-effect-write procedure rank at or
+# near the top of the risk-descending digest, above a single-axis dynamic-SQL
+# procedure, per the M-tier playbook Verify expectation.
+_WEIGHT_WRITE_BREADTH: int = 4
+
+# (#1293) Audit-write breadth — the count of audit / log / notification / outbox
+# tables the SP writes to. Weight 2 (matching side_effects, below the top-tier
+# 4s): a single audit/outbox write is a bounded, well-understood migration task
+# (preserve the trail / outbox semantics transactionally), but a proc that fans
+# audit + notification writes across several tables is a genuine
+# transaction-consistency hazard that must out-rank a same-size pure-domain
+# writer. Combined with the +1 this surface already earns in the generic
+# side_effects axis, a 2-audit-table reads_writes proc clears a 6-domain-table
+# proc — matching the M-tier playbook Verify expectation that the multi-table
+# side-effect writer is the single highest-risk proc.
+_WEIGHT_AUDIT_WRITE: int = 2
 
 # ---------------------------------------------------------------------------
 # Unparseable sentinel (#871)
@@ -183,36 +204,38 @@ _WEIGHT_WRITE_BREADTH: int = 2  # (#886) write-surface breadth weight
 #
 #   max_parsed = _PER_AXIS_CAP * (_WEIGHT_COMPLEXITY + _WEIGHT_SIDE_EFFECTS
 #                                  + max(_WEIGHT_CURSOR_DEPTH, _WEIGHT_CROSS_DB)
-#                                  + _WEIGHT_DYNAMIC_SQL + _WEIGHT_WRITE_BREADTH)
-#              = 5 * (3 + 2 + 4 + 3 + 2)  =  70
+#                                  + _WEIGHT_DYNAMIC_SQL + _WEIGHT_WRITE_BREADTH
+#                                  + _WEIGHT_AUDIT_WRITE)
+#              = 5 * (3 + 2 + 4 + 3 + 4 + 2)  =  90   (#1293: + audit_write*2)
 #
 # (cursor_heavy and cross_db_link are mutually-exclusive IOShape literals so
 # only the larger of the two — _WEIGHT_CURSOR_DEPTH == _WEIGHT_CROSS_DB == 4
-# — can fire in a single call; the upper bound is therefore exactly 70.)
+# — can fire in a single call; the upper bound is therefore exactly 90.)
 #
-# Setting the sentinel to 100 leaves a comfortable gap above 70, is human-
-# readable in the digest, and cannot be confused with a legitimately scored
-# total by any reader who knows the weight matrix.
+# Setting the sentinel 30 above max_parsed (= 120) leaves a comfortable gap, is
+# human-readable in the digest, and cannot be confused with a legitimately
+# scored total by any reader who knows the weight matrix.
 
 #: Maximum parsed total under the current weight matrix (cursor/cross-db
-#: mutually exclusive, both at cap; all other axes at cap).  Used to
-#: verify that :data:`UNPARSEABLE_RISK_SENTINEL` is strictly greater.
+#: mutually exclusive, both at cap; all other axes at cap = 90, #1293).  Used
+#: to verify that :data:`UNPARSEABLE_RISK_SENTINEL` is strictly greater.
 _MAX_PARSED_TOTAL: int = _PER_AXIS_CAP * (
     _WEIGHT_COMPLEXITY
     + _WEIGHT_SIDE_EFFECTS
     + _WEIGHT_CURSOR_DEPTH
     + _WEIGHT_DYNAMIC_SQL
     + _WEIGHT_WRITE_BREADTH
-)  # = 5 * (3 + 2 + 4 + 3 + 2) = 70
+    + _WEIGHT_AUDIT_WRITE
+)  # = 5 * (3 + 2 + 4 + 3 + 4 + 2) = 90  (#1293)
 
 #: Sentinel ``total`` assigned to an unparseable SP (#871).
 #:
-#: Strictly above :data:`_MAX_PARSED_TOTAL` (70) so an unparseable SP
+#: Strictly above :data:`_MAX_PARSED_TOTAL` (90) so an unparseable SP
 #: always sorts to the **TOP** of the risk-descending digest and sequencing
 #: order.  Component axes are set to 0 because the profile is unknown, not
 #: because the risk is low — callers must not interpret the 0-axis values as
 #: a low-risk verdict.
-UNPARSEABLE_RISK_SENTINEL: int = _MAX_PARSED_TOTAL + 30  # = 100
+UNPARSEABLE_RISK_SENTINEL: int = _MAX_PARSED_TOTAL + 30  # = 120 (#1293: was 110)
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +250,7 @@ def score_conversion_risk_for_unparseable() -> RiskScore:
     would make it score 0 under :func:`score_conversion_risk` and sort to the
     bottom of the risk-descending digest — backwards, because "unknown" is not
     "safe".  This function returns a synthetic :class:`RiskScore` with
-    ``total == UNPARSEABLE_RISK_SENTINEL`` (100) so the procedure floats to
+    ``total == UNPARSEABLE_RISK_SENTINEL`` (110) so the procedure floats to
     the top of every downstream sort and the human reviewer is forced to look
     at it first.
 
@@ -250,6 +273,7 @@ def score_conversion_risk_for_unparseable() -> RiskScore:
         cursor_depth=0,
         dynamic_sql=0,
         write_breadth=0,
+        audit_write=0,
         total=UNPARSEABLE_RISK_SENTINEL,
     )
 
@@ -259,6 +283,7 @@ def score_conversion_risk(
     profile: StaticProfile,
     io_shape: IOShape,
     side_effects: list[SideEffect],
+    audit_write_count: int = 0,
 ) -> RiskScore:
     """Return the :class:`RiskScore` for one stored procedure.
 
@@ -286,6 +311,11 @@ def score_conversion_risk(
             contribute to the score and dynamic_sql is counted via the
             dedicated dynamic-SQL axis (not double-counted in side
             effects).
+        audit_write_count: Number of distinct audit / log / notification /
+            outbox tables the SP writes to (#1293), from
+            ``side_effects.audit_write_tables``. Drives the dedicated
+            ``audit_write`` axis (count, capped at ``_PER_AXIS_CAP``). Defaults
+            to 0 so callers that do not compute it score ``audit_write=0``.
 
     Returns:
         A :class:`RiskScore` whose ``composite`` and ``total`` reflect
@@ -299,6 +329,7 @@ def score_conversion_risk(
     dynamic_sql = _score_dynamic_sql(side_effects)
     cross_db = _score_cross_db(io_shape)
     write_breadth = _score_write_breadth(profile.table_touch_count, io_shape)
+    audit_write = _score_audit_write(audit_write_count)
 
     weighted_total = (
         complexity * _WEIGHT_COMPLEXITY
@@ -307,6 +338,7 @@ def score_conversion_risk(
         + dynamic_sql * _WEIGHT_DYNAMIC_SQL
         + cross_db * _WEIGHT_CROSS_DB
         + write_breadth * _WEIGHT_WRITE_BREADTH
+        + audit_write * _WEIGHT_AUDIT_WRITE
     )
 
     return RiskScore(
@@ -316,6 +348,7 @@ def score_conversion_risk(
         cursor_depth=cursor_depth,
         dynamic_sql=dynamic_sql,
         write_breadth=write_breadth,
+        audit_write=audit_write,
         total=weighted_total,
     )
 
@@ -403,6 +436,18 @@ def _score_write_breadth(table_touch_count: int, io_shape: IOShape) -> int:
     return min(raw, _PER_AXIS_CAP)
 
 
+def _score_audit_write(audit_write_count: int) -> int:
+    """Bucket the audit-write table count into ``[0, _PER_AXIS_CAP]`` (#1293).
+
+    A straight count (not floor-divided) — each distinct audit / notification /
+    outbox write table is an independent trail/outbox surface to preserve, so
+    two such tables score strictly above one. Clamped to the per-axis cap.
+    """
+    if audit_write_count <= 0:
+        return 0
+    return min(audit_write_count, _PER_AXIS_CAP)
+
+
 __all__ = [
     "UNPARSEABLE_RISK_SENTINEL",
     "_CROSS_DB_SCORE",
@@ -412,6 +457,7 @@ __all__ = [
     "_PER_AXIS_CAP",
     "_READS_WRITES_MODIFIER",
     "_TABLE_TOUCH_DIVISOR",
+    "_WEIGHT_AUDIT_WRITE",
     "_WEIGHT_COMPLEXITY",
     "_WEIGHT_CROSS_DB",
     "_WEIGHT_CURSOR_DEPTH",

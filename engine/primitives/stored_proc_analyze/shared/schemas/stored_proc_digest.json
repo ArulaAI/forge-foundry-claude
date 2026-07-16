@@ -44,8 +44,14 @@
     },
     "RiskScore": {
       "additionalProperties": false,
-      "description": "Composite conversion-risk score for a single stored procedure.\n\nEach component is a non-negative integer; ``total`` is the orchestrator-\ncomputed roll-up that downstream M3 sequencing and M4 plan synthesis\nsort against. Score weighting + calibration are documented alongside\n``shared/risk_scorer.py`` (M2-9) \u2014 keeping the model unopinionated lets\nthe scorer evolve without re-shaping the persisted digest.\n\n``write_breadth`` (#886) captures write-surface breadth: a combination\nof ``table_touch_count`` (how many distinct tables the SP touches \u2014\nbroader data dependencies mean a higher migration surface) and an\n``io_shape`` write-surface modifier (``reads_writes`` adds 1 on top of\nthe table-count bucket because coordinated read+write patterns are\nriskier to migrate than pure-write patterns that only flow one\ndirection). This axis differentiates the non-dynamic-SQL population so\nthat a 6-table ETL procedure does not tie a trivial single-table CRUD\nwrapper at zero.",
+      "description": "Composite conversion-risk score for a single stored procedure.\n\nEach component is a non-negative integer; ``total`` is the orchestrator-\ncomputed roll-up that downstream M3 sequencing and M4 plan synthesis\nsort against. Score weighting + calibration are documented alongside\n``shared/risk_scorer.py`` (M2-9) \u2014 keeping the model unopinionated lets\nthe scorer evolve without re-shaping the persisted digest.\n\n``write_breadth`` (#886) captures write-surface breadth: a combination\nof ``table_touch_count`` (how many distinct tables the SP touches \u2014\nbroader data dependencies mean a higher migration surface) and an\n``io_shape`` write-surface modifier (``reads_writes`` adds 1 on top of\nthe table-count bucket because coordinated read+write patterns are\nriskier to migrate than pure-write patterns that only flow one\ndirection). This axis differentiates the non-dynamic-SQL population so\nthat a 6-table ETL procedure does not tie a trivial single-table CRUD\nwrapper at zero.\n\n``audit_write`` (#1293) counts the audit / log / notification / outbox\ntables the SP writes to (capped at ``_PER_AXIS_CAP``) \u2014 a data-integrity\nhazard distinct from plain domain-table writes: the migrator must preserve\nthe audit-trail / outbox write semantics transactionally across the\nstrangler boundary. It fires as both a ``SideEffect`` surface and this\ndedicated axis so a multi-table side-effecting writer out-ranks a same-size\npure-domain writer.",
       "properties": {
+        "audit_write": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Audit Write",
+          "type": "integer"
+        },
         "complexity": {
           "minimum": 0,
           "title": "Complexity",
@@ -128,7 +134,8 @@
             "reads_writes",
             "writes_only",
             "cursor_heavy",
-            "cross_db_link"
+            "cross_db_link",
+            "unknown"
           ],
           "title": "Io Shape",
           "type": "string"
@@ -170,7 +177,9 @@
               "file",
               "external",
               "dynamic_sql",
-              "none"
+              "audit_write",
+              "none",
+              "unknown"
             ],
             "type": "string"
           },

@@ -75,6 +75,11 @@ class SyncManifest(BaseModel):
     """Pydantic model for .foundry/manifest.yaml."""
 
     foundry_primitives_version: str
+    # Optional: the git URL the CLI pulls the primitive library FROM. Omitted →
+    # the canonical foundry repo (cache._DEFAULT_REPO_URL). A client fork sets
+    # this to its own repository so `forge-foundry-sync` syncs from there
+    # (centralized sync source, #1283). Must be a git URL, not a filesystem path.
+    foundry_primitives_source: str | None = None
     project_id: str
     # FLEX-5 (#177): accept either a bare path string (legacy) or a
     # PrimitiveOverride dict (preferred for multi-library composition). Pydantic
@@ -101,6 +106,32 @@ class SyncManifest(BaseModel):
     # subset (e.g. ``harnesses: [claude_code]``) to avoid writing adapter files
     # for harnesses not in use. Pydantic coerces a YAML list to tuple[str, ...].
     harnesses: tuple[str, ...] = Field(default=DEFAULT_HARNESSES)
+
+    @field_validator("foundry_primitives_source")
+    @classmethod
+    def _validate_source_url(cls, v: str | None) -> str | None:
+        """SEC-7: constrain the library source to a git URL, no flag injection.
+
+        The value flows into ``cache.get_primitives_path_for(source_url, version)``
+        → ``git clone <source_url>``. Restrict it to a git URL shape (not a bare
+        filesystem path — git URL only per the centralized-sync-source design) and
+        reject a leading ``-`` (a value git-clone would parse as a flag), mirroring
+        ``PrimitiveOverride._reject_unsafe_version``. ``None`` (omitted) passes and
+        the CLI falls back to the canonical foundry repo.
+        """
+        if v is None:
+            return v
+        if v.startswith("-"):
+            raise ValueError(
+                f"invalid foundry_primitives_source {v!r}: must not start with '-' "
+                "(git-clone flag injection, SEC-7)"
+            )
+        if not v.startswith(("http://", "https://", "git@", "ssh://", "git+")):
+            raise ValueError(
+                f"invalid foundry_primitives_source {v!r}: must be a git URL "
+                "(http://, https://, git@, ssh://, or git+…), not a filesystem path"
+            )
+        return v
 
 
 def read_manifest(project_root: Path) -> SyncManifest:

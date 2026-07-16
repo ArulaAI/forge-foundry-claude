@@ -66,6 +66,7 @@ from primitives._shared.discovery.models import (
     SharedComponent,
     UIElement,
 )
+from primitives._shared.scan_exclusions import DEFAULT_EXCLUDED_DIRS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -566,7 +567,11 @@ def _iter_sources(root: Path) -> Iterable[Path]:
             if child.is_symlink():
                 continue
             if child.is_dir():
-                if child.name.startswith("."):
+                # Skip dot-dirs AND build-output / dependency dirs (#1359): a
+                # non-dot ``target/`` / ``build/`` / ``node_modules/`` otherwise
+                # ingests compiled + test artifacts as source, inflating the
+                # inventory and topping §15 with test classes.
+                if child.name.startswith(".") or child.name in DEFAULT_EXCLUDED_DIRS:
                     continue
                 queue.append(child)
                 continue

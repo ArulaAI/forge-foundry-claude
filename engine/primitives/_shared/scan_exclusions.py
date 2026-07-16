@@ -66,6 +66,13 @@ _DEPENDENCY_DIRS: frozenset[str] = frozenset(
         "dist",
         "build",
         "target",
+        # Additional unambiguous build-output / vendor dirs (#1359). ``out`` is a
+        # common Gradle/IDE output dir; ``vendor`` holds vendored deps (Go/PHP);
+        # ``coverage`` holds coverage-report output. ``bin`` is intentionally NOT
+        # excluded — it is too often a legitimate scripts/source directory.
+        "out",
+        "vendor",
+        "coverage",
     }
 )
 

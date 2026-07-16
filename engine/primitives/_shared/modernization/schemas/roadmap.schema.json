@@ -2,7 +2,7 @@
   "$defs": {
     "RoadmapItem": {
       "additionalProperties": false,
-      "description": "One work item: a unit placed in a wave, deferred, or never-extract.\n\n``rationale`` explains a ``deferred`` / ``never_extract`` placement (e.g.\n\"in dependency cycle [a, b]\", \"external/unknown dependency\"); it is empty for\nitems that sit cleanly in an ``extract_order`` wave.",
+      "description": "One work item: a unit placed in a wave, deferred, or never-extract.\n\n``rationale`` explains a ``deferred`` / ``never_extract`` / ``isolated``\nplacement (e.g. \"in dependency cycle [a, b]\", \"external/unknown dependency\",\n\"no dependencies discovered\"); it is empty for items that sit cleanly in an\n``extract_order`` wave.",
       "properties": {
         "depends_on": {
           "default": [],
@@ -96,6 +96,13 @@
       "format": "date-time",
       "title": "Generated At",
       "type": "string"
+    },
+    "isolated": {
+      "items": {
+        "$ref": "#/$defs/RoadmapItem"
+      },
+      "title": "Isolated",
+      "type": "array"
     },
     "never_extract": {
       "items": {

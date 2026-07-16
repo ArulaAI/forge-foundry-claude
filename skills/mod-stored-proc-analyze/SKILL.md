@@ -30,7 +30,7 @@ the exit code. It does **not** reproduce the parse or scoring pipeline in-sessio
 
 - A modernization engagement starts and the engineer needs to score every SP in a
   legacy Oracle / SQL Server / DB2 dump so they can sequence the rewrite by risk.
-- A reviewer wants the M3 strategist (`/mod-modernization-strategist`) or M4 converter
+- A reviewer wants the M3 strategist (`/mod-sql-strategist`) or M4 converter
   (`/mod-sp-converter`) to operate on a *current* digest rather than an out-of-date one.
 - The team needs a structured artifact (`stored-procs.json`, schema-versioned at `"1.0"`)
   that downstream BFSI dashboards can read without parsing the original DDL.
@@ -150,13 +150,15 @@ the supported dialects, the risk-score composition, and the exit-code scheme) li
     `"1.0"`, round-trippable via `StoredProcDigest.model_validate_json`). Each `StoredProc`:
     name, schema, language/dialect, `body_loc`, `cyclomatic`, `io_shape`
     (`reads_only`/`reads_writes`/`writes_only`/`cursor_heavy`/`cross_db_link`), side-effect
-    surface, `classification` (`crud_wrapper`/`validation`/`calculation`/`orchestration`/
+    surface (email/file/external/dynamic_sql/audit_write), `classification`
+    (`crud_wrapper`/`validation`/`calculation`/`orchestration`/
     `reporting`/`etl`/`trigger_handler`/`unknown`), `risk_score` (`RiskScore`: complexity +
     side-effect breadth + cursor depth + dynamic-SQL surface + cross-DB links +
-    write-surface breadth; weight matrix v2 `total = complexity×3 + side_effects×2 +
-    cursor_depth×4 + dynamic_sql×3 + cross_db×4 + write_breadth×2`, where `write_breadth
-    = min(table_touch_count // 2 + (1 if reads_writes else 0), 5)` — #886),
-    `touched_tables`, `parse_status`.
+    write-surface breadth + audit-write breadth; weight matrix v4 `total = complexity×3 +
+    side_effects×2 + cursor_depth×4 + dynamic_sql×3 + cross_db×4 + write_breadth×4 +
+    audit_write×2`, where `write_breadth = min(table_touch_count // 2 + (1 if reads_writes
+    else 0), 5)` and `audit_write = min(count of audit/log/notification/outbox write tables,
+    5)` — #886/#1197/#1293), `touched_tables`, `parse_status`.
   - `stored-procs-summary.md` — procedures sorted by `risk_score.total` descending.
 - Per-SP parse failures exit `0`; unparseable procedures land with `parse_status="unparseable"`.
   Anti-hallucination guard (M2-11): closed-vocab classification + AST-validated `touched_tables`.

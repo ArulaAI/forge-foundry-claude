@@ -63,7 +63,14 @@ report.
    rendering yourself; the script handles all of that.
 3. **Hand off to the deterministic pipeline (Stages C, D, E, dedup, render — pure Python,
    zero model tokens).** Assemble all Stage B findings (plus any C10/C11 findings when not
-   `--skip-ai-quality`) into one compact JSON payload:
+   `--skip-ai-quality`) into one compact JSON payload. **Each finding's `file` MUST be the
+   path exactly as it appears in the Step-1 scan** — i.e. relative to `--scan-root` (the
+   script enumerates files as `path.relative_to(scan_root)`). The **file** anti-hallucination
+   guard (Stage C, below) **DROPS any finding whose `file` is not in that scanned set**, so a
+   mismatched path yields an empty report with every finding silently dropped. In the example
+   below, `src/Button.tsx` is correct only when `--scan-root` is the **project root**; if you
+   scan with `--scan-root ./src`, the same file appears as `Button.tsx` and the finding's
+   `file` must be `Button.tsx` too.
    ```json
    {
      "findings": [
@@ -71,11 +78,12 @@ report.
         "confidence_score": 0.85, "title": "...", "description": "...", "suggestion": "...",
         "wcag_criterion": "1.1.1", "component": "Button"}
      ],
-     "c10_findings": [...],
-     "c11_findings": [...]
+     "c10_findings": [],
+     "c11_findings": []
    }
    ```
-   Write it to a temp file, then run the script:
+   Write it to a temp file, then run the script (with `--scan-root` set to the project root so
+   the example's `src/…` paths resolve):
    ```bash
    python3 <skill-dir>/scripts/fe_review.py \
        --findings-json <payload.json> \

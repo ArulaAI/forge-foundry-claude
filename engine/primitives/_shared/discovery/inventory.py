@@ -41,6 +41,7 @@ from primitives._shared.discovery.models import (
     ProgramRecord,
     SourceLanguage,
 )
+from primitives._shared.scan_exclusions import DEFAULT_EXCLUDED_DIRS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -549,6 +550,11 @@ def _iter_sources(root: Path, extensions: frozenset[str]) -> Iterable[Path]:
             if child.is_symlink():
                 continue
             if child.is_dir():
+                # Skip dot-dirs AND build-output / dependency dirs (#1359) so the
+                # inventory does not ingest compiled/test artifacts from
+                # ``target/`` / ``build/`` / ``node_modules/`` as source.
+                if child.name.startswith(".") or child.name in DEFAULT_EXCLUDED_DIRS:
+                    continue
                 queue.append(child)
                 continue
             if child.suffix.lower() in extensions:

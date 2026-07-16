@@ -81,6 +81,7 @@ if TYPE_CHECKING:
         UIElement,
     )
     from primitives._shared.discovery.synthesis import SynthesisJudgments
+    from primitives._shared.modernization.models import FunctionalInventory
 
     #: ``number -> renderer`` dispatch signature; each renderer returns
     #: ``(deterministic_content, evidence_paths)``.
@@ -375,8 +376,30 @@ def _section_7(analysis: AnalysisDigest) -> tuple[str, list[str]]:
 def _section_8(
     analysis: AnalysisDigest,
     unit_paths: list[str] | None = None,
+    functional_map: FunctionalInventory | None = None,
 ) -> tuple[str, list[str]]:
-    """§8 Business Rules Catalog — one candidate rule row per execution unit."""
+    """§8 Business Rules Catalog.
+
+    When a functional-map ``FunctionalInventory`` supplies real business rules
+    (#1358 — the app-mod chain runs /functional-map alongside discovery), render
+    those *verified* rules instead of the deterministic per-unit "Rule candidate in
+    `<ClassName>` — pending verification" stubs. Without a functional-map (a
+    standalone discovery run), the deterministic per-execution-unit stubs are the
+    byte-identical fallback.
+    """
+    if functional_map is not None and functional_map.business_rules:
+        ids = assign_ids("R", len(functional_map.business_rules))
+        rows = [
+            [
+                rid,
+                str(br.get("rule") or ""),
+                f"`{br.get('step_ref') or '—'}` ({br.get('source') or 'functional-map'})",
+            ]
+            for rid, br in zip(ids, functional_map.business_rules, strict=True)
+        ]
+        table = md_table(["Rule ID", "Business Rule", "Source"], rows)
+        return table, unit_paths if unit_paths is not None else _unit_paths(analysis)
+
     units = _by_name(analysis.execution_units)
     if not units:
         return "_No execution units to seed candidate business rules from._", []
@@ -597,6 +620,7 @@ def render_playbook(
     title: str = "Discovery Playbook",
     narratives: Mapping[int, str] | None = None,
     synthesis: SynthesisJudgments | None = None,
+    functional_map: FunctionalInventory | None = None,
 ) -> str:
     """Render the full 16-section ``PLAYBOOK.md`` from an :class:`AnalysisDigest`.
 
@@ -619,6 +643,15 @@ def render_playbook(
             produces output byte-identical to the no-synthesis path (regression-
             locked). The other 11 sections are byte-identical regardless of
             ``synthesis``.
+        functional_map: optional functional-map ``FunctionalInventory`` (#1358).
+            When it carries real business rules, §8 renders those verified rules
+            instead of the per-execution-unit "candidate rule — pending
+            verification" stubs. ``functional_map=None`` (a standalone discovery
+            run) → byte-identical to the prior output. **Precedence:** §8 is also a
+            synthesis-driven section — when a ``synthesis`` §8 body is *also*
+            supplied, the harness-authored synthesis prose wins (it replaces the
+            whole §8 content, functional-map table included), since synthesis is
+            the deliberate narrative layer.
 
     Returns:
         The complete ``PLAYBOOK.md`` document as a string (trailing newline).
@@ -638,7 +671,16 @@ def render_playbook(
                 call_edges=precomputed_call_edges,
                 unit_paths=precomputed_unit_paths,
             )
-        elif number in {1, 3, 4, 8, 15, 16}:
+        elif number in {8}:
+            # §8 also receives the optional functional-map channel (#1358): when a
+            # FunctionalInventory carries real business rules, they replace the
+            # per-unit candidate-rule stubs.
+            content, evidence = _section_8(
+                analysis,
+                unit_paths=precomputed_unit_paths,
+                functional_map=functional_map,
+            )
+        elif number in {1, 3, 4, 15, 16}:
             content, evidence = renderer(  # type: ignore[call-arg]
                 analysis,
                 unit_paths=precomputed_unit_paths,

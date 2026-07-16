@@ -21,8 +21,14 @@ Bug-fix inventory (carried from ``spec_parse.py``):
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+#: Standard-library top-level module names. Symbols imported from these are
+#: never Public-API references (they are stdlib), so the unknown-symbol check
+#: must not flag them (#1199 — generalizes the earlier ``__future__`` skip).
+_STDLIB_MODULES: frozenset[str] = frozenset(sys.stdlib_module_names)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -183,12 +189,6 @@ def _extract_public_api(text: str) -> list[str]:
     if section is None:
         return []
 
-    # Find the first fenced code block.
-    fence_match = re.search(r"```[^\n]*\n(.*?)```", section, re.DOTALL)
-    if not fence_match:
-        return []
-    block = fence_match.group(1)
-
     symbols: list[str] = []
     seen: set[str] = set()
 
@@ -198,29 +198,50 @@ def _extract_public_api(text: str) -> list[str]:
             seen.add(name)
             symbols.append(name)
 
-    # 1. multi-symbol `from X import (a, b, c, ...)`.
-    for multi in re.finditer(r"from\s+\S+\s+import\s*\(([^)]+)\)", block, re.DOTALL):
-        for part in re.split(r"[,\n]", multi.group(1)):
-            stripped = part.strip()
-            if stripped and not stripped.startswith("#"):
-                _add(stripped.split()[0])
+    # Find the first fenced code block.
+    fence_match = re.search(r"```[^\n]*\n(.*?)```", section, re.DOTALL)
+    if fence_match:
+        block = fence_match.group(1)
 
-    # 2. single-line `from X import Y`.
-    for single in re.findall(r"from\s+\S+\s+import\s+(\w+)", block):
-        _add(single)
+        # 1. multi-symbol `from X import (a, b, c, ...)`.
+        for multi in re.finditer(r"from\s+\S+\s+import\s*\(([^)]+)\)", block, re.DOTALL):
+            for part in re.split(r"[,\n]", multi.group(1)):
+                stripped = part.strip()
+                if stripped and not stripped.startswith("#"):
+                    _add(stripped.split()[0])
 
-    # 3. `class Name` / `def name(` (incl. `async def`) definition forms (#1092).
-    for name in re.findall(r"^\s*class\s+([A-Za-z_]\w*)", block, re.MULTILINE):
+        # 2. single-line `from X import Y`.
+        for single in re.findall(r"from\s+\S+\s+import\s+(\w+)", block):
+            _add(single)
+
+        # 3. `class Name` / `def name(` (incl. `async def`) definition forms (#1092).
+        for name in re.findall(r"^\s*class\s+([A-Za-z_]\w*)", block, re.MULTILINE):
+            _add(name)
+        for name in re.findall(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(", block, re.MULTILINE):
+            _add(name)
+
+        if symbols:
+            return symbols
+
+        # 4. Fallback: bare identifiers minus stop-words (e.g. a `Name OtherName` block).
+        words = re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", block)
+        return [w for w in words if w not in _STOPWORDS]
+
+    # 5. No fenced code block (#1199): parse a bullet-list / prose form. Backtick-
+    # quoted names are the canonical symbol markers — take the leading identifier
+    # of each ``…`` span (``create_plan(a, b)`` → ``create_plan``,
+    # ``PaymentPlan`` → ``PaymentPlan``). Also catch inline ``class``/``def``
+    # forms. Only structured signals are collected (no bare-prose fallback, which
+    # would be noise outside a code fence).
+    for span in re.findall(r"`([^`]+)`", section):
+        m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", span)
+        if m:
+            _add(m.group(1))
+    for name in re.findall(r"\bclass\s+([A-Za-z_]\w*)", section):
         _add(name)
-    for name in re.findall(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(", block, re.MULTILINE):
+    for name in re.findall(r"\b(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(", section):
         _add(name)
-
-    if symbols:
-        return symbols
-
-    # 4. Fallback: bare identifiers minus stop-words (e.g. a `Name OtherName` block).
-    words = re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", block)
-    return [w for w in words if w not in _STOPWORDS]
+    return symbols
 
 
 # ---------------------------------------------------------------------------
@@ -406,11 +427,12 @@ def _unknown_symbol_findings(path: Path, public_api: list[str]) -> list[Finding]
     api_set = set(public_api)
     imported: set[str] = set()
     # Python: `from X import A, B` or `from X import (A, B)`. The module name
-    # is captured so `from __future__ import …` is skipped — it is never a
-    # Public-API symbol and produced a false positive on every generated file
-    # (#1094).
+    # is captured so imports from the standard library (``__future__``,
+    # ``datetime``, ``decimal``, ``pathlib``, …) are skipped — a stdlib symbol
+    # like ``date`` is never a Public-API reference and otherwise produced a
+    # false positive (#1094 __future__; generalized to all stdlib in #1199).
     for m in re.finditer(r"from\s+(\S+)\s+import\s*\(?([^);\n]+)\)?", text):
-        if m.group(1) == "__future__":
+        if m.group(1).split(".")[0] in _STDLIB_MODULES:
             continue
         for name in re.split(r"[,\s]+", m.group(2)):
             clean = name.strip().rstrip(",")

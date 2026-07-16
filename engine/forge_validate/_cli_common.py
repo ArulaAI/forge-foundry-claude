@@ -149,6 +149,29 @@ def state_dir_option() -> Callable[[Any], Any]:
     )
 
 
+_VALID_REPO_ROLES: frozenset[str] = frozenset({"ui", "api", "db", "iac"})
+
+
+def parse_repo_override(value: str) -> tuple[str, str]:
+    """SEC-8 parse+validate one ``--repo role=path`` token.
+
+    Splits on the FIRST ``=``. Validates role ∈ {ui,api,db,iac} and that the
+    path does not start with ``-`` (flag injection) or contain a ``..`` segment
+    (path traversal, checked on the raw value). Raises click.BadParameter.
+    """
+    if "=" not in value:
+        raise click.BadParameter(f"Expected role=path, got {value!r}")
+    role, path = value.split("=", 1)
+    if role not in _VALID_REPO_ROLES:
+        raise click.BadParameter(f"role must be one of {sorted(_VALID_REPO_ROLES)}, got {role!r}")
+    if path.startswith("-"):
+        raise click.BadParameter(f"path must not start with '-': {path!r}")
+    parts = path.replace("\\", "/").split("/")
+    if ".." in parts:
+        raise click.BadParameter(f"path must not contain '..' segment: {path!r}")
+    return role, path
+
+
 def validate_skill_first_flags(
     *,
     extract_only: bool,  # noqa: ARG001 — kept for a uniform call signature across commands.

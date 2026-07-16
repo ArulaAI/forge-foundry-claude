@@ -1,8 +1,8 @@
 {
   "source_repo": "https://github.com/arula-ai/forge-foundry-primitives.git",
-  "ref": "v5.0.2",
-  "sha": "0f5f563588b21e0f5aef7e5a277d60a1e8f8b583",
-  "vendored_at": "2026-07-07T12:22:05Z",
-  "primitive_count": 31,
-  "version": "0.1.0"
+  "ref": "v8.5.1",
+  "sha": "59daf6457ff446b5da665b276c49e42a2b70c454",
+  "vendored_at": "2026-07-16T02:52:49Z",
+  "primitive_count": 38,
+  "version": "0.2.0"
 }

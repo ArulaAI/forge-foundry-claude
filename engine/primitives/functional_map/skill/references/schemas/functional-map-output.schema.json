@@ -1,0 +1,448 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FunctionalMapOutput",
+  "description": "JSON output sidecar schema v2.0 for the S61 /functional-map primitive (forge-validate functional-map --continue --judgments).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "primitive",
+    "synthesized",
+    "endpoints",
+    "guards",
+    "roles",
+    "capabilities",
+    "nav_edges"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "primitive": {
+      "type": "string",
+      "const": "functional-map"
+    },
+    "synthesized": {
+      "type": "boolean"
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "method", "handler", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^EP-[0-9]+$"
+          },
+          "path": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET", "POST", "PUT", "PATCH", "DELETE", "ANY",
+              "WS", "QUERY", "MUTATION", "SUBSCRIPTION", "RPC", "RPC_STREAM", "SYSTEM"
+            ]
+          },
+          "handler": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "guards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["endpoint_id", "kind", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["auth_required", "role_required", "policy", "public"]
+          },
+          "roles": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["code", "brd", "both"]
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "action", "endpoint_id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FR-[0-9]+$"
+          },
+          "action": {
+            "type": "string"
+          },
+          "endpoint_id": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "nav_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from_screen", "to_screen", "kind", "file", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "from_screen": {
+            "type": "string"
+          },
+          "to_screen": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["link", "redirect", "router", "ajax"]
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "form_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["endpoint_id", "name", "field_type", "required", "constraints"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "field_type": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "constraints": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "label": {
+            "type": "string"
+          },
+          "conditional_role": {
+            "type": "string",
+            "description": "Role that activates this field's conditional rendering; empty means always shown."
+          },
+          "conditional_on": {
+            "type": "string",
+            "description": "Name of the sibling field this field's visibility depends on; empty means unconditional."
+          },
+          "conditional_value": {
+            "type": "string",
+            "description": "Value the conditional_on field must equal to show this field; empty means any value."
+          },
+          "default_value": {
+            "type": "string",
+            "description": "Pre-populated default value for the field; empty means no default."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "True if the field is rendered as read-only / display-only in the UI."
+          },
+          "display_order": {
+            "type": "integer"
+          },
+          "options": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Real select/dropdown/radio option literals (Track D); empty for non-enumerated fields."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "jsp", "thymeleaf", "freemarker", "react", "angular", "vue",
+              "annotation", "javascript", "hidden", "graphql", "proto"
+            ]
+          }
+        }
+      }
+    },
+    "validation_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["entity", "field", "constraint", "params"],
+        "additionalProperties": false,
+        "properties": {
+          "entity": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "constraint": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {"type": "string"}
+          },
+          "message": {
+            "type": "string"
+          },
+          "error_i18n_key": {
+            "type": "string"
+          },
+          "cross_field": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "fr_statements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FR-[0-9]+$"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["must", "should", "may"]
+          },
+          "fr_type": {
+            "type": "string",
+            "enum": [
+              "validation", "display_rule", "access_control", "audit", "notification",
+              "pagination", "file_upload", "concurrency", "session", "async", "functional"
+            ]
+          },
+          "source_evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fr_id", "id", "given", "when", "then"],
+        "additionalProperties": false,
+        "properties": {
+          "fr_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^FR-[0-9]+-AC[0-9]+$"
+          },
+          "given": {
+            "type": "string"
+          },
+          "when": {
+            "type": "string"
+          },
+          "then": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "business_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_ref", "rule"],
+        "additionalProperties": false,
+        "properties": {
+          "step_ref": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "validation", "guard", "jpa", "session", "conditional", "error_flow", "inferred"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable BR-NNN id, assigned deterministically at synthesis-merge time (SP-E). Empty on a --no-synthesis run."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "WHY the rule exists — harness-interpreted (SP-D); defaults empty."
+          },
+          "enforced_at": {
+            "type": "string",
+            "description": "file:line where the rule fires, derived from the step_ref→endpoint mapping (SP-E); empty when unresolvable."
+          }
+        }
+      }
+    },
+    "i18n": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "value", "locale"],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string",
+            "enum": ["happy", "error", "role_scoped"]
+          },
+          "variant_label": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["order", "endpoint_id", "description", "file", "line"],
+              "additionalProperties": false,
+              "properties": {
+                "order": {
+                  "type": "integer"
+                },
+                "endpoint_id": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "data_flow": {
+                  "type": "string"
+                },
+                "variant": {
+                  "type": "string",
+                  "enum": ["happy", "error", "role_scoped"]
+                },
+                "variant_label": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "journeys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "persona", "goal", "flow_ids", "narrative"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "persona": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "flow_ids": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "narrative": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

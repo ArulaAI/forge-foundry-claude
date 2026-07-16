@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FunctionalMapSynthesisPrompts",
+  "description": "Output of forge-validate functional-map --extract-only; input to the harness synthesis round.",
+  "type": "object",
+  "required": ["schema_version", "primitive", "items"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "primitive": {"type": "string", "enum": ["functional-map"]},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "instruction"],
+        "additionalProperties": true,
+        "properties": {
+          "kind": {"type": "string"},
+          "instruction": {"type": "string"},
+          "endpoints": {"type": "array"},
+          "nav_edges": {"type": "array"},
+          "roles": {"type": "array"}
+        }
+      }
+    }
+  }
+}

@@ -171,12 +171,18 @@ def cli(  # noqa: PLR0913, PLR0915
             load_intermediate,
             load_state,
         )
-        from primitives._shared.protocol import read_judgments  # noqa: PLC0415
+        from primitives._shared.protocol import (  # noqa: PLC0415
+            assert_matching_round,
+            read_judgments,
+        )
 
         pipeline = load_state(resolved_state_dir)
 
         assert judgments is not None  # guaranteed by validate_skill_first_flags
         judgment_envelope = read_judgments(Path(judgments))
+        # Reject a stale prior-round judgments file rather than silently
+        # finalizing and dropping the pending round (#1199).
+        assert_matching_round(judgment_envelope, pipeline.round, path=Path(judgments))
         judgment_map = {item.id: item.response for item in judgment_envelope.items}
 
         if pipeline.round == 1:
@@ -248,6 +254,7 @@ def cli(  # noqa: PLR0913, PLR0915
                     format_=format_,
                     max_severity=max_severity,
                     state_dir=resolved_state_dir,
+                    explicit=(state_dir is not None),
                 )
             else:
                 # Sub-case (a): PII path — apply PII judgments, run B-D, then
@@ -361,6 +368,7 @@ def cli(  # noqa: PLR0913, PLR0915
                         format_=format_,
                         max_severity=max_severity,
                         state_dir=resolved_state_dir,
+                        explicit=(state_dir is not None),
                     )
 
         elif pipeline.round == 2:  # noqa: PLR2004
@@ -402,6 +410,7 @@ def cli(  # noqa: PLR0913, PLR0915
                 format_=format_,
                 max_severity=max_severity,
                 state_dir=resolved_state_dir,
+                explicit=(state_dir is not None),
             )
         else:
             click.echo(
@@ -636,7 +645,7 @@ def cli(  # noqa: PLR0913, PLR0915
 # ---------------------------------------------------------------------------
 
 
-def _render_and_exit(
+def _render_and_exit(  # noqa: PLR0913
     *,
     resolved_code: Path,
     sources: list[PIISource],
@@ -648,6 +657,7 @@ def _render_and_exit(
     format_: str,
     max_severity: str | None,
     state_dir: Path | None,
+    explicit: bool = False,
 ) -> None:
     """Build DataFlowReport, render it, apply exit gate logic, clean up state.
 
@@ -680,7 +690,7 @@ def _render_and_exit(
         emit_report(rendered)
 
     if state_dir is not None:
-        cleanup_state(state_dir)
+        cleanup_state(state_dir, explicit=explicit)
 
     # Exit gate logic.
     _check_severity_gate(report, max_severity)

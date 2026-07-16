@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FunctionalMapSynthesis",
+  "description": "Harness-produced synthesis.json v2.0; consumed by forge-validate functional-map --continue --judgments.",
+  "type": "object",
+  "required": ["schema_version", "flows", "journeys", "reconciliation"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"type": "string"},
+    "flows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "steps"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "variant": {"type": "string", "enum": ["happy", "error", "role_scoped"]},
+          "variant_label": {"type": "string"},
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["order", "endpoint_id", "description", "file", "line"],
+              "additionalProperties": false,
+              "properties": {
+                "order": {"type": "integer"},
+                "endpoint_id": {"type": "string"},
+                "description": {"type": "string"},
+                "file": {"type": "string"},
+                "line": {"type": "integer"},
+                "data_flow": {"type": "string"},
+                "variant": {"type": "string", "enum": ["happy", "error", "role_scoped"]},
+                "variant_label": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "journeys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "persona", "goal", "flow_ids", "narrative"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "persona": {"type": "string"},
+          "goal": {"type": "string"},
+          "flow_ids": {"type": "array", "items": {"type": "string"}},
+          "narrative": {"type": "string"}
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "object",
+      "required": ["reconciled", "code_only", "brd_only"],
+      "additionalProperties": false,
+      "properties": {
+        "reconciled": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "source": {"type": "string", "enum": ["code", "brd", "both"]}
+            }
+          }
+        },
+        "code_only": {"type": "array", "items": {"type": "string"}},
+        "brd_only": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "business_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_ref", "rule"],
+        "additionalProperties": false,
+        "properties": {
+          "step_ref": {"type": "string"},
+          "rule": {"type": "string"},
+          "source": {
+            "type": "string",
+            "enum": ["validation", "guard", "jpa", "session", "conditional", "error_flow", "inferred"]
+          }
+        }
+      }
+    },
+    "fr_statements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^FR-[0-9]+$"},
+          "statement": {"type": "string"},
+          "priority": {"type": "string", "enum": ["must", "should", "may"]},
+          "fr_type": {
+            "type": "string",
+            "enum": [
+              "validation", "display_rule", "access_control", "audit", "notification",
+              "pagination", "file_upload", "concurrency", "session", "async", "functional"
+            ]
+          },
+          "source_evidence": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["fr_id", "id", "given", "when", "then"],
+        "additionalProperties": false,
+        "properties": {
+          "fr_id": {"type": "string"},
+          "id": {"type": "string", "pattern": "^FR-[0-9]+-AC[0-9]+$"},
+          "given": {"type": "string"},
+          "when": {"type": "string"},
+          "then": {"type": "string"}
+        }
+      }
+    }
+  }
+}

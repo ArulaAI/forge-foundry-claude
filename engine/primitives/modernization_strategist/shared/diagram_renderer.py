@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from primitives._shared.modernization import flowchart
 
 if TYPE_CHECKING:
+    from primitives._shared.modernization.models import RoadmapItem
     from primitives.modernization_strategist.shared.models import DecompositionPlan
 
 _DECOMPOSITION_FILENAME = "01_decomposition.mmd"
@@ -62,7 +63,16 @@ def _decomposition_diagram(plan: DecompositionPlan) -> str:
 
 
 def _sequencing_diagram(plan: DecompositionPlan) -> str:
-    """Roadmap waves as nodes; ``wave N`` → ``wave N+1``."""
+    """Roadmap waves as nodes (``wave N`` → ``wave N+1``), plus the deferred and
+    never-extract buckets (#1344).
+
+    A context in ``roadmap.deferred`` / ``roadmap.never_extract`` is machine-readable
+    in the JSON and disclosed in ``modernization-plan.md``, but was previously invisible
+    in the diagram — so the Mermaid alone read as a complete plan when a whole bounded
+    context had been excluded from the sequence. Each excluded context now renders as a
+    trailing annotated node (``⏸ Deferred`` / ``⛔ Never extract``) carrying its rationale,
+    linked from the last wave so a reader sees the exclusion.
+    """
     waves = sorted(plan.roadmap.waves, key=lambda w: w.wave)
     nodes: list[tuple[str, str]] = []
     for w in waves:
@@ -71,6 +81,25 @@ def _sequencing_diagram(plan: DecompositionPlan) -> str:
     edges: list[tuple[str, str, str]] = [
         (f"wave{waves[i].wave}", f"wave{waves[i + 1].wave}", "then") for i in range(len(waves) - 1)
     ]
+
+    # The node the excluded buckets hang off — the last wave, if any.
+    last_wave_id = f"wave{waves[-1].wave}" if waves else ""
+
+    def _excluded(items: list[RoadmapItem], prefix: str, label_tag: str, edge_label: str) -> None:
+        for idx, item in enumerate(items):
+            node_id = f"{prefix}{idx}"
+            rationale = getattr(item, "rationale", "") or ""
+            label = f"{label_tag}: {item.name}"
+            if rationale:
+                label += f" — {rationale}"
+            nodes.append((node_id, label))
+            if last_wave_id:
+                edges.append((last_wave_id, node_id, edge_label))
+
+    _excluded(list(plan.roadmap.deferred), "deferred", "⏸ Deferred", "deferred")
+    _excluded(list(plan.roadmap.never_extract), "never", "⛔ Never extract", "excluded")
+    _excluded(list(plan.roadmap.isolated), "isolated", "◇ Isolated", "isolated")
+
     return flowchart(nodes, edges, direction="TD", fenced=False)
 
 

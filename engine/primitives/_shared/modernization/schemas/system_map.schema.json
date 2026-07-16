@@ -40,21 +40,51 @@
       "title": "SystemMapEdge",
       "type": "object"
     },
+    "SystemMapEntryPoint": {
+      "additionalProperties": false,
+      "description": "A typed **inbound** node on the system-map (Track B, #1427).\n\nUnlike a :class:`SystemMapNode` (a unit) or an interface edge (a\nunit\u2192unit dependency), an entry point is the *outside trigger* that drives\nthe system: an HTTP route, a scheduled/cron job, a CLI command, a message\nconsumer, or an external integration / webhook / SOAP endpoint. ``trigger``\ncarries the real value (cron expr / topic / queue / route / command),\n``target`` names the context/unit it dispatches into, and ``source`` is the\n``file:line`` provenance. All but ``name``/``kind`` default empty so a\nthinly-captured entry point still threads through honestly.",
+      "properties": {
+        "kind": {
+          "default": "",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "default": "",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "default": "",
+          "title": "Target",
+          "type": "string"
+        },
+        "trigger": {
+          "default": "",
+          "title": "Trigger",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SystemMapEntryPoint",
+      "type": "object"
+    },
     "SystemMapNode": {
       "additionalProperties": false,
-      "description": "One unit in the cross-unit graph.",
+      "description": "One unit in the cross-unit graph.\n\n``domains`` carries **all** of the unit's bounded-context / domain labels\n(#1375). A unit that a discovery pass tags with several domains (e.g. a\npetclinic app spanning ``owner``/``pet``/``vet``/``visit``) keeps every one,\nso the bounded contexts a consumer derives are the *union* of every node's\ndomains \u2014 not just the first label of each node (the pre-#1375 behaviour that\nsilently collapsed the other domains into ``_unassigned_`` downstream).",
       "properties": {
-        "domain": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Domain"
+        "domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Domains",
+          "type": "array"
         },
         "id": {
           "title": "Id",
@@ -74,13 +104,20 @@
     }
   },
   "additionalProperties": false,
-  "description": "The joined cross-unit dependency graph (``correlate.py`` output).",
+  "description": "The joined cross-unit dependency graph (``correlate.py`` output).\n\nTrack B (#1427): ``entry_points`` carries the typed inbound triggers that\ndrive the system (scheduled jobs, message consumers, CLI entries, webhooks,\n\u2026). Default-empty \u2014 a system with no captured entry points threads through\nbyte-identically to prior behavior.",
   "properties": {
     "edges": {
       "items": {
         "$ref": "#/$defs/SystemMapEdge"
       },
       "title": "Edges",
+      "type": "array"
+    },
+    "entry_points": {
+      "items": {
+        "$ref": "#/$defs/SystemMapEntryPoint"
+      },
+      "title": "Entry Points",
       "type": "array"
     },
     "generated_at": {

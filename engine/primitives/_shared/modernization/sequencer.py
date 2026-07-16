@@ -4,7 +4,8 @@ Generalized from ``mfx``'s sequencing layer (design spec §3, Layer 1).
 :func:`order` takes a :class:`SystemMap` (from :mod:`correlate`) and a
 ``risk_weights`` mapping and produces a :class:`Roadmap` that partitions unit
 nodes into wave-ordered extraction batches, a deferred list (high-risk or
-blocked), a never-extract list (cycle members), and the raw cycle list.
+blocked), a never-extract list (cycle members), an isolated list (edge-less
+standalone units, #1378), and the raw cycle list.
 
 Pure and deterministic: no LLM, no clock, no filesystem. Tarjan's SCC is used
 for cycle detection so the result is independent of iteration order (we drive
@@ -29,7 +30,10 @@ if TYPE_CHECKING:
 
 _RISK_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2}
 _VALID_RISKS: frozenset[str] = frozenset(_RISK_RANK)
-_NON_UNIT_KINDS: frozenset[str] = frozenset({"external", "shared_lib"})
+# IaC nodes (MR6, #1555) are a deployment boundary, not an extractable app unit — a
+# provisioned-infrastructure node is never sequenced into an extract wave. Kept
+# alongside ``external``/``shared_lib`` as the non-unit kinds ``order`` skips.
+_NON_UNIT_KINDS: frozenset[str] = frozenset({"external", "shared_lib", "iac"})
 
 
 def _resolve_risk(
@@ -96,6 +100,7 @@ def order(
     risk_weights: Mapping[str, str] | None = None,
     *,
     generated_at: datetime | None = None,
+    skip_units: frozenset[str] | None = None,
 ) -> Roadmap:
     """Sequence *graph*'s unit nodes into risk-weighted topological waves.
 
@@ -106,15 +111,72 @@ def order(
             ``"medium"``.
         generated_at: explicit timestamp for reproducible output.  When ``None``
             the :class:`Roadmap` default fires.
+        skip_units: optional set of unit node ids that are **already modern** (MR5,
+            #1554) and so are not extractable work. They are REMOVED from the output
+            unit set — they never appear in ``waves`` / ``deferred`` /
+            ``never_extract`` / ``isolated``. Critically they are kept in the graph
+            for the topo / wave-depth computation, so a modern unit that others
+            depend on still orders those dependents correctly (its edges inform
+            ordering); it is only dropped at emit time. ``None`` / empty →
+            byte-identical to a plain call (the #1408 additive invariant).
 
     Returns:
-        A :class:`Roadmap` with ``waves``, ``deferred``, ``never_extract``, and
-        ``cycles`` all in deterministic sorted order.
+        A :class:`Roadmap` with ``waves``, ``deferred``, ``never_extract``,
+        ``isolated`` (genuinely standalone edge-less units, #1378), and ``cycles``
+        all in deterministic sorted order.
     """
+    # MR5 (#1554): the modern-unit skip set. Empty when not filtering — every
+    # partition below stays byte-identical, so the sequencer goldens are unchanged.
+    skip: frozenset[str] = skip_units or frozenset()
+
     # ------------------------------------------------------------------
     # 1. Partition unit nodes from non-unit nodes.
     # ------------------------------------------------------------------
-    unit_ids: list[str] = sorted(n.id for n in graph.nodes if n.kind not in _NON_UNIT_KINDS)
+    all_unit_ids: list[str] = sorted(n.id for n in graph.nodes if n.kind not in _NON_UNIT_KINDS)
+
+    # ------------------------------------------------------------------
+    # 1b. Isolate genuinely-standalone units (#1378).
+    #
+    # A unit that touches NO edge at all (neither src nor dst of any SystemMapEdge,
+    # including edges to external/shared_lib nodes) while the rest of the system IS
+    # wired together has nothing to sequence against. Scheduling it as a wave-1
+    # extraction target is a meaningless "risk: low" leaf (the S40 graceful-skip
+    # leftover: an ``.#api`` node with 0 edges and no components, disconnected from
+    # the wired ``.#db`` → ``.#app`` → ``.#ui`` spine). It is neither ``deferred``
+    # (no dependency block) nor ``never_extract`` (no cycle) — it is standalone, so
+    # surface it in its own ``isolated`` bucket and drop it from the wave graph
+    # below. (``shared_lib`` carriers are already non-unit and excluded above; a
+    # data carrier others depend on necessarily touches an edge, so it is never
+    # isolated.)
+    #
+    # The isolation only fires when the graph HAS edges: a graph with no edges at
+    # all is a set of intentionally-independent units (the pre-existing "parallel
+    # wave 1" semantics), not a mix of a wired spine plus a disconnected orphan —
+    # so those units keep flowing through normal risk-weighted sequencing.
+    # ------------------------------------------------------------------
+    edge_touched: set[str] = set()
+    for edge in graph.edges:
+        edge_touched.add(edge.src)
+        edge_touched.add(edge.dst)
+    isolated_ids: list[str] = (
+        [u for u in all_unit_ids if u not in edge_touched] if edge_touched else []
+    )
+    isolated_set: set[str] = set(isolated_ids)
+
+    isolated_items: list[RoadmapItem] = [
+        RoadmapItem(
+            id=uid,
+            name=uid,
+            risk=_resolve_risk(uid, risk_weights),
+            depends_on=(),
+            rationale="isolated: no dependencies discovered",
+        )
+        for uid in isolated_ids
+        if uid not in skip  # MR5 (#1554): a modern unit is not extraction work.
+    ]
+
+    # Only connected units flow into cycle detection + wave sequencing.
+    unit_ids: list[str] = [u for u in all_unit_ids if u not in isolated_set]
     unit_set: set[str] = set(unit_ids)
 
     # ------------------------------------------------------------------
@@ -160,6 +222,7 @@ def order(
             rationale=f"in dependency cycle: {member_to_cycle[uid]}",
         )
         for uid in sorted(cycle_members)
+        if uid not in skip  # MR5 (#1554): drop modern units from the output.
     ]
 
     # ------------------------------------------------------------------
@@ -179,33 +242,53 @@ def order(
         wave_cache[u] = depth
         return depth
 
-    # First pass: determine which units are deferred due to high risk.
-    high_risk: set[str] = {u for u in schedulable if _resolve_risk(u, risk_weights) == "high"}
-
-    # Second pass: propagate deferred status to dependents.
-    # A unit is blocked if any of its unit-deps are in never_extract or deferred.
-    # We resolve this iteratively using a worklist (only re-check newly blocked
-    # units' dependants instead of scanning all schedulable units per pass).
-    deferred_set: set[str] = set(high_risk)
-    # Build reverse-dep index over ALL unit nodes (including cycle members) so
-    # schedulable units that depend on a cycle member are reached by the worklist.
+    # Reverse-dep index over ALL unit nodes (including cycle members) so a
+    # schedulable unit depending on a cycle member is reached by the worklist.
     # rdeps[v] = list of schedulable units whose deps include v.
     rdeps: dict[str, list[str]] = {u: [] for u in unit_ids}
     for u in schedulable:
         for v in deps.get(u, set()) & unit_set:
             rdeps[v].append(u)
-    # Seed worklist with high-risk schedulable units AND cycle members so that
-    # any schedulable unit depending on either gets propagated into deferred_set.
-    worklist: list[str] = list(high_risk) + list(cycle_members)
-    while worklist:
-        newly_blocked = worklist.pop()
-        for u in rdeps.get(newly_blocked, []):
-            if u not in deferred_set:
-                deferred_set.add(u)
-                worklist.append(u)
+
+    def _propagate(seed: set[str]) -> set[str]:
+        """Transitive closure of *seed* over reverse-deps within the schedulable set."""
+        blocked = set(seed)
+        worklist = list(seed)
+        while worklist:
+            v = worklist.pop()
+            for u in rdeps.get(v, []):
+                if u not in blocked:
+                    blocked.add(u)
+                    worklist.append(u)
+        return blocked
+
+    # Cycle-blocked units are genuinely un-extractable (they transitively depend
+    # on a dependency cycle). Risk-deferred units are high-risk (+ their
+    # dependents) — a strangler-fig "extract later, mitigate first" bucket that is
+    # tracked SEPARATELY so it can be relaxed if deferring on risk alone would
+    # leave the whole roadmap empty (#1197 6c). ``cycle_members`` itself is not
+    # schedulable, so restrict to schedulable units.
+    cycle_blocked: set[str] = _propagate(set(cycle_members)) & schedulable_set
+    high_risk: set[str] = {u for u in schedulable if _resolve_risk(u, risk_weights) == "high"}
+    risk_deferred: set[str] = (_propagate(high_risk) & schedulable_set) - cycle_blocked
+
+    # Collapse guard (#1197 6c-ii): if every extractable (non-cycle-blocked) unit
+    # is risk-deferred, the roadmap would collapse to a single empty/short wave
+    # (the reported "5 contexts deferred, one-node sequencing"). You cannot defer
+    # the ENTIRE system — something must be extracted first — so drop the pure-risk
+    # deferral and sequence the risk-deferred units into dependency waves anyway
+    # (they stay risk-ordered within each wave, so the metering-before-billing
+    # dependency ordering still emerges). Cycle-blocked units remain deferred.
+    extractable_after_cycles = schedulable_set - cycle_blocked
+    if extractable_after_cycles and extractable_after_cycles <= risk_deferred:
+        risk_deferred = set()
+
+    deferred_set: set[str] = cycle_blocked | risk_deferred
 
     deferred_items: list[RoadmapItem] = []
     for uid in sorted(deferred_set):
+        if uid in skip:  # MR5 (#1554): modern units are not deferred work.
+            continue
         if _resolve_risk(uid, risk_weights) == "high":
             rationale = "high-risk; defer pending mitigation"
         else:
@@ -236,7 +319,15 @@ def order(
 
     wave_objects: list[RoadmapWave] = []
     for wave_num in sorted(waves_by_depth):
-        wave_unit_ids = waves_by_depth[wave_num]
+        # MR5 (#1554): a skipped (modern) unit still contributed its wave_depth to
+        # the units that depend on it (``wave_depth`` runs over the full schedulable
+        # graph, above) — so its dependents order correctly — but it is dropped from
+        # the emitted wave items here. A wave that reduces to nothing is not emitted;
+        # the depth of a surviving later wave is unchanged (numbering is depth-based,
+        # not sequential), so removing a modern wave-1 unit leaves wave 2 as "wave 2".
+        wave_unit_ids = [u for u in waves_by_depth[wave_num] if u not in skip]
+        if not wave_unit_ids:
+            continue
         items = tuple(
             RoadmapItem(
                 id=uid,
@@ -263,6 +354,7 @@ def order(
             waves=wave_objects,
             deferred=deferred_items,
             never_extract=never_extract_items,
+            isolated=isolated_items,
             cycles=cycles,
             generated_at=generated_at,
         )
@@ -270,5 +362,6 @@ def order(
         waves=wave_objects,
         deferred=deferred_items,
         never_extract=never_extract_items,
+        isolated=isolated_items,
         cycles=cycles,
     )

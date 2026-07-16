@@ -15,7 +15,16 @@ _PYTHON_M = re.compile(r"(?<!bin/)python\s+-m\s+primitives\.")
 
 
 def _all_skill_files() -> list[Path]:
-    return [p for p in SKILLS.rglob("*") if p.is_file()]
+    # Executable invocations live in SKILL.md + reference *markdown*. JSON schema
+    # files (references/schemas/*.json) are DATA — their `"description"` fields
+    # legitimately mention `forge-validate <slug>` as prose describing the CLI, and
+    # the vendor rewrite only rewrites shell invocations, not JSON documentation
+    # strings. Excluding them avoids false positives on schema prose.
+    return [
+        p
+        for p in SKILLS.rglob("*")
+        if p.is_file() and p.suffix.lower() not in {".json"}
+    ]
 
 
 def test_no_residual_bare_forge_validate_invocations():

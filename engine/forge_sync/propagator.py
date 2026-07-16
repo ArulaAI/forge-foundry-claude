@@ -27,6 +27,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Protocol, Union, runtime_checkable
 
+from forge_sync.emitter.aliases import emit_alias_skills
 from forge_sync.emitter.emit import (
     emit_ci_for_primitive,
     emit_from_sources,
@@ -662,5 +663,19 @@ def propagate_adapters(
                 if adapter_dir.is_dir():
                     touched.extend(harness.propagate(project_root, name, adapter_dir))
         result[name] = sorted(set(touched))
+
+    # Deprecation-alias skills (#1326/#1327): synthetic forwarding shims for
+    # renamed slash commands. These are NOT backed by a primitive directory, so
+    # they are emitted once here (after the per-primitive loop) — per enabled,
+    # emitter-known harness — through the same path-guarded write_emitted sink.
+    # They cover exactly one minor version and are removed next major (see
+    # forge_sync/emitter/aliases.py::DEPRECATED_SKILL_ALIASES).
+    alias_touched: list[str] = []
+    for harness in harnesses:
+        if harness.name not in _EMITTER_HARNESSES:
+            continue
+        alias_touched.extend(write_emitted(project_root, emit_alias_skills(harness.name)))
+    if alias_touched:
+        result["_deprecation_aliases"] = sorted(set(alias_touched))
 
     return result

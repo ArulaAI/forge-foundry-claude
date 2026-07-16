@@ -1,4 +1,4 @@
-"""M3 /mod-modernization-strategist — Pydantic data models.
+"""M3 /mod-sql-strategist — Pydantic data models.
 
 The decomposition surface M3's deterministic Stages A-D produce: bounded
 contexts (Stage A), an ownership report (Stage B), the reused Layer-1

@@ -66,10 +66,21 @@ name outside the universe as UNVERIFIED.
 
 
 def _build_universe(plan: DecompositionPlan) -> set[str]:
-    """Every table + context name the model is allowed to reference."""
+    """Every name the model is allowed to reference in a grounded narrative.
+
+    Includes context names, table names, AND every antipattern *evidence* token
+    (#1197 6c): the antipattern evidence the model is handed cites stored-proc
+    names (e.g. ``sp_assess_late_penalties``) and the contexts they span. Those SP
+    names were previously excluded from the universe, so a narrative that
+    (correctly) referenced them got flagged ``⚠️ UNVERIFIED`` — while the same
+    names rendered un-flagged in the deterministic antipattern tables. Grounding
+    the evidence tokens closes that inconsistency.
+    """
     names: set[str] = {ctx.name for ctx in plan.contexts}
     for ctx in plan.contexts:
         names.update(ctx.tables)
+    for ap in plan.antipatterns:
+        names.update(str(token) for token in ap.evidence)
     return names
 
 

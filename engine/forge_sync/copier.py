@@ -199,4 +199,21 @@ def copy_primitives(
         copied.append(name)
         logger.debug("Copied primitive %r → %s", name, dest)
 
+    # Copy the top-level ``primitives/*.py`` support modules (#1347). The loop
+    # above copies each primitive *directory* (and ``_shared/``), but the
+    # library also carries package-level helpers directly under ``primitives/``
+    # — ``__init__.py`` (which makes the synced tree an importable package) and
+    # cross-primitive support modules such as ``_response_schema_validator.py``,
+    # ``_renderer_registry.py``, ``_xml_safety.py`` and ``_tool_version.py``.
+    # Several synced ``shared/models.py`` modules import these, so omitting them
+    # left the synced tree import-incomplete (``ModuleNotFoundError``). Copy
+    # every regular ``*.py`` file at the ``primitives/`` root, skipping symlinks
+    # (SEC-10 discipline, matching ``_ignore_git_and_symlinks``).
+    if primitives_src_root.is_dir():
+        for py_file in sorted(primitives_src_root.glob("*.py")):
+            if py_file.is_symlink() or not py_file.is_file():
+                continue
+            shutil.copy2(py_file, dest_root / py_file.name)
+            logger.debug("Copied support module %r → %s", py_file.name, dest_root)
+
     return copied

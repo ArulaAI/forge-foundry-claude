@@ -1,0 +1,59 @@
+# M0 /mod-sql-modernization — curated C7 workflow definition (M0-3 / #254).
+#
+# This file is the M0-specific workflow contract consumed by the C7
+# /work-orchestrator runtime. It encodes the five-stage M1 -> M2 -> M3 -> M4
+# -> roll-up pipeline documented in primitives/legacy_modernization/SPEC.md
+# Pipeline-stages table and design spec §M0.
+#
+# Per charter §3.4 orchestrator carve-out: M0 declares no sub-call rules of
+# its own. The C10/C11/C8 sub-calls fire inside the delegated M1/M2/M3/M4
+# stages and their findings flow into the stage-5 roll-up report
+# (report_aggregator: primitives/legacy_modernization/shared/report_aggregator.py).
+#
+# Per design spec §M0 "Why not redundant with C7": C7 is the generic
+# workflow engine. This file is the curated, M-tier-specific workflow that
+# rides on top of it so consumers do not have to author the YAML themselves.
+name: legacy-modernization
+
+stages:
+  - name: schema
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-db-schema-analyze
+    args:
+      ddl_path: '$ddl_path'
+      dialect: '$dialect'
+      backend: '$backend'
+      context_dir: '$context_dir'
+    skip_when: false
+  - name: stored-procs
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-stored-proc-analyze
+    args:
+      ddl_path: '$ddl_path'
+      dialect: '$dialect'
+      backend: '$backend'
+      context_dir: '$context_dir'
+    skip_when: '$skip_stored_procs'
+  - name: strategy
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sql-strategist
+    args:
+      context_dir: '$context_dir'
+      target_paradigm: '$target_paradigm'
+      constraints: '$constraints'
+      backend: '$backend'
+    skip_when: '$skip_strategy'
+  - name: conversions
+    command: "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sp-converter
+    parallel: true
+    foreach: '$top_n_sps_by_risk'
+    args:
+      sp: '$item'
+      target: '$conversion_target'
+      context_dir: '$context_dir'
+      backend: '$backend'
+    skip_when: '$skip_conversions'
+  - name: rollup
+    command: "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.legacy_modernization.shared.report_aggregator
+    args:
+      context_dir: '$context_dir'
+      output: '.foundry/context/db/modernization-report.md'
+      backend: '$backend'
+    skip_when: false
