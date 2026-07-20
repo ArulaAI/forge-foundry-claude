@@ -23,6 +23,9 @@ backend:
   spring-boot:
     latest: "3.3"
     label: "Spring Boot {v}"
+  spring-batch:
+    latest: "5.2"
+    label: "Spring Batch {v}"
   quarkus:
     latest: "3.15"
     label: "Quarkus {v}"
@@ -39,3 +42,27 @@ cloud:
   aws:
     latest: "current"
     label: "AWS"
+
+api_style:
+  rest:
+    latest: ""
+    label: "REST"
+  graphql:
+    latest: ""
+    label: "GraphQL"
+  grpc:
+    latest: ""
+    label: "gRPC"
+
+container:
+  docker:
+    latest: ""
+    label: "Docker"
+
+orchestration:
+  eks:
+    latest: ""
+    label: "Amazon EKS"
+  kubernetes:
+    latest: ""
+    label: "Kubernetes"

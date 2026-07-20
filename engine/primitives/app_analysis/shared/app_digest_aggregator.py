@@ -9,8 +9,9 @@ Invoked by the skill body after all discovery stages have completed::
 Reads from on-disk stage artifacts:
 
 * ``PLAYBOOK.md``              — written by ``/mod-playbook-discovery``
-* repo-digest text             — written to ``<context-dir>/repo-digest.txt``
-                                  by the skill body's ``/repo-digest`` dispatch
+* repo-digest text             — ``<context-dir>/repo-digest.md`` (what
+                                  ``/repo-digest --produce`` writes) or
+                                  ``repo-digest.txt`` (either accepted, #1647)
 * ``functional-map.json``      — written by ``/functional-map`` (optional)
 
 Writes:
@@ -66,8 +67,44 @@ _MAX_DOMAINS = 20
 
 _SCHEMA_VERSION = "1.0"
 
+#: Words that are never a bounded-context name even when they appear in a §8
+#: heading / context bullet — articles, copulas, and generic section nouns that a
+#: too-eager tokenizer would otherwise emit as domains (#1649).
+_DOMAIN_STOP_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "has",
+        "rule",
+        "rules",
+        "business",
+        "bounded",
+        "context",
+        "contexts",
+        "domain",
+        "domains",
+        "catalog",
+        "candidate",
+    }
+)
+
+#: A genuine bounded-context declaration in §8 is either a Markdown heading
+#: (``### Owner`` / ``#### Owner``) or a bolded context bullet whose bold word is
+#: explicitly LABELED as a context/domain (``- **Owner** context``). A bare
+#: ``**word**`` inside a table rule cell (``**amount**``) is intentionally NOT a
+#: match — that is the #1649 over-reduction the aggregator suffered.
+_DOMAIN_HEADING_RE = re.compile(r"^\s*#{3,}\s+([A-Za-z][\w-]*)")
+_DOMAIN_CONTEXT_BULLET_RE = re.compile(
+    r"\*\*([A-Za-z][\w-]*)\*\*\s+(?:bounded\s+)?(?:context|domain)\b",
+    re.IGNORECASE,
+)
+
 # Artifact file names (relative to context-dir unless noted)
 _REPO_DIGEST_TXT = "repo-digest.txt"
+_REPO_DIGEST_MD = "repo-digest.md"  # what `forge-validate repo-digest --produce` writes (#1647)
 _FUNCTIONAL_MAP_JSON = "functional-map.json"
 
 # ---------------------------------------------------------------------------
@@ -161,6 +198,95 @@ def _detect_flavor_from_text(text: str) -> str:
         if re.search(pattern, text, re.IGNORECASE):
             return flavor
     return "generic"
+
+
+#: A `path/to/file.ext:line` citation inside §8 rule prose (mirrors the refcheck ref
+#: shape) — captured so a threaded business rule keeps its source (#1660).
+_RULE_CITATION_RE = re.compile(r"([\w./\-]+\.\w+:\d+(?:-\d+)?)")
+
+#: A §8 rule sub-heading (`### Amount validation` / `#### Matching gift`). The heading
+#: text becomes the rule's title; the prose beneath it (to the next heading) is the body.
+_RULE_HEADING_RE = re.compile(r"^\s*#{3,}\s+(.+?)\s*$")
+
+#: Max §8 rules carried into the digest — keeps app-digest.json compact.
+_MAX_BUSINESS_RULES = 40
+
+#: Min cells a §8 table row must have to be treated as a rule row (id | desc | …).
+_MIN_RULE_TABLE_CELLS = 2
+
+#: Cap on distinct citations carried on one rule's ``source`` — defense in depth so a
+#: stray citation-dense block can't balloon a rule's source list (#1664).
+_MAX_RULE_SOURCES = 6
+
+#: A line that opens/closes an HTML ``<details>``/``<summary>`` Evidence block. The
+#: playbook renders a `<details><summary>Evidence</summary> …file list… </details>`
+#: block AFTER the last §8 rule with no following heading; without a terminator its
+#: file-list would be folded into that rule's prose + source (#1664).
+_RULE_PROSE_TERMINATOR_RE = re.compile(r"^\s*</?(?:details|summary)\b", re.IGNORECASE)
+
+
+def _extract_business_rules(section_body: str) -> list[dict[str, Any]]:
+    """Extract §8 Business Rules Catalog rules as structured facts (#1660).
+
+    Each ``### Heading`` sub-section is one rule: the heading is the ``rule`` title,
+    the prose beneath (to the next heading) is folded into ``rule`` as ``"Heading —
+    <prose>"``, and every ``path:line`` citation in that prose is collected into
+    ``source`` (capped at ``_MAX_RULE_SOURCES``). Rules with no heading but a bulleted
+    ``- **X** ... (file:line)`` line are also captured. A ``<details>``/``<summary>``
+    Evidence block terminates the current rule's prose (#1664) so the playbook's
+    trailing Evidence file-list is not folded into the last rule. Deterministic, no
+    LLM. Returns dicts shaped for ``modernization``'s ``business_rules`` channel
+    (``rule`` / ``source``).
+    """
+    rules: list[dict[str, Any]] = []
+    current_title: str | None = None
+    current_prose: list[str] = []
+
+    def _flush() -> None:
+        if current_title is None:
+            return
+        prose = " ".join(p.strip() for p in current_prose if p.strip())
+        sources = list(dict.fromkeys(_RULE_CITATION_RE.findall(prose)))[:_MAX_RULE_SOURCES]
+        statement = f"{current_title} — {prose}" if prose else current_title
+        rules.append({"rule": statement.strip(), "source": ", ".join(sources)})
+
+    for line in section_body.splitlines():
+        if line.lstrip().startswith("|"):
+            continue  # skip table rows (handled as a fallback below)
+        if _RULE_PROSE_TERMINATOR_RE.match(line):
+            # An Evidence <details>/<summary> block: end the current rule and stop
+            # accumulating prose so the trailing file-list doesn't bleed in (#1664).
+            _flush()
+            current_title = None
+            current_prose = []
+            continue
+        h = _RULE_HEADING_RE.match(line)
+        if h:
+            _flush()
+            current_title = h.group(1).strip()
+            current_prose = []
+        elif current_title is not None:
+            current_prose.append(line)
+    _flush()
+
+    # Fallback: a §8 rendered as a table (no `###` headings) — one rule per data row
+    # whose description cell carries a citation, so batch/DB tiers still surface rules.
+    if not rules:
+        for line in section_body.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("|"):
+                continue
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if len(cells) < _MIN_RULE_TABLE_CELLS or set("".join(cells)) <= {"-", " "}:
+                continue  # header separator / too few cells
+            desc = max(cells, key=len)
+            sources = list(dict.fromkeys(_RULE_CITATION_RE.findall(" ".join(cells))))[
+                :_MAX_RULE_SOURCES
+            ]
+            if desc and desc not in ("Rule", "Candidate Rule", "Status"):
+                rules.append({"rule": desc, "source": ", ".join(sources)})
+
+    return rules[:_MAX_BUSINESS_RULES]
 
 
 def _extract_debt_items(section_body: str) -> list[str]:
@@ -266,6 +392,23 @@ def _extract_tier(section_body: str) -> str | None:
     return None
 
 
+def _match_domain_label(line: str) -> str | None:
+    """Return the bounded-context name declared on *line*, or ``None`` (#1649).
+
+    Matches ONLY a genuine context declaration — a ``### Owner`` heading or a
+    ``- **Owner** context`` / ``**Owner** domain`` bullet — never a bare bolded word
+    inside a rule sentence/table cell (``**amount**``), which is a business TERM, not
+    a bounded context. Table rows are filtered by the caller before this runs.
+    """
+    heading = _DOMAIN_HEADING_RE.match(line)
+    if heading:
+        return heading.group(1)
+    bullet = _DOMAIN_CONTEXT_BULLET_RE.search(line)
+    if bullet:
+        return bullet.group(1)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # PLAYBOOK.md parser
 # ---------------------------------------------------------------------------
@@ -288,18 +431,29 @@ def _parse_playbook(playbook_path: Path) -> dict[str, Any]:
             arch_text = body
             break
 
-    # §8 Business Rules / Bounded Contexts — domain labels
+    # §8 Business Rules / Bounded Contexts — domain labels + structured rules.
     domains: list[str] = []
+    business_rules: list[dict[str, Any]] = []
     for title, body in sections.items():
         if re.search(r"business\s+rules?|bounded\s+context|domain", title, re.IGNORECASE):
-            # Extract capitalized words / noun phrases as domain labels
             for line in body.splitlines():
-                # Match "- **Owner** context" or "### Owner"
-                dm = re.search(r"(?:\*\*|###?\s+)(\w+)", line)
+                # Skip Markdown table rows entirely (#1649): §8 is usually rendered as
+                # a rule table whose description cells contain bolded business TERMS
+                # (e.g. `**amount**`), which are NOT bounded-context names. Treating a
+                # bolded table-cell word as a domain collapsed `domains` to a spurious
+                # single token like `['amount']`.
+                stripped = line.lstrip()
+                if stripped.startswith("|"):
+                    continue
+                dm = _match_domain_label(line)
                 if dm:
-                    label = dm.group(1).strip().lower()
-                    if label and label not in {"the", "a", "an", "is", "are", "has"}:
+                    label = dm.strip().lower()
+                    if label and label not in _DOMAIN_STOP_WORDS:
                         domains.append(label)
+            # #1660: extract the §8 rules as STRUCTURED facts so the app-mod chain can
+            # thread them into per-context spec prompts. For a non-web tier (batch/DB)
+            # the functional-map slice is empty, so §8 is the only rule source.
+            business_rules.extend(_extract_business_rules(body))
 
     # §14 Tech-debt inventory
     debt: list[str] = []
@@ -322,6 +476,7 @@ def _parse_playbook(playbook_path: Path) -> dict[str, Any]:
     return {
         "flavor": flavor,
         "domains": list(dict.fromkeys(domains))[:_MAX_DOMAINS],  # dedup, preserve order
+        "business_rules": business_rules,  # §8 structured rules (#1660)
         "debt": debt[:_MAX_DEBT],
         "migration_state": migration_state,
         "tier": tier,
@@ -632,6 +787,24 @@ def _repo_has_data_access(repo_root: Path) -> bool:
     return False
 
 
+def _resolve_repo_digest(context_dir: Path) -> Path:
+    """Locate the /repo-digest output in *context_dir*, accepting either extension.
+
+    `forge-validate repo-digest --produce` writes ``repo-digest.md``; older / hand-saved
+    flows use ``repo-digest.txt`` (#1647). Prefer ``.txt`` (the historical name) when both
+    are present so behavior is unchanged for existing callers, then fall back to ``.md``.
+    Raises ``FileNotFoundError`` naming BOTH accepted paths when neither exists.
+    """
+    for candidate in (context_dir / _REPO_DIGEST_TXT, context_dir / _REPO_DIGEST_MD):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"repo-digest not found at {context_dir / _REPO_DIGEST_TXT} "
+        f"or {context_dir / _REPO_DIGEST_MD}. Run /repo-digest (which writes "
+        "repo-digest.md) into this context dir before calling the aggregator."
+    )
+
+
 def _parse_repo_digest(repo_digest_path: Path) -> dict[str, Any]:
     """Parse the /repo-digest output text file.
 
@@ -922,12 +1095,7 @@ def assemble(
             break
 
     # --- /repo-digest output (required) ---
-    repo_digest_path = context_dir / _REPO_DIGEST_TXT
-    if not repo_digest_path.is_file():
-        raise FileNotFoundError(
-            f"repo-digest.txt not found at {repo_digest_path}. "
-            "Run /repo-digest and save its output to this path before calling the aggregator."
-        )
+    repo_digest_path = _resolve_repo_digest(context_dir)
     repo_digest_data = _parse_repo_digest(repo_digest_path)
 
     # --- functional-map.json (optional) ---
@@ -1008,6 +1176,7 @@ def assemble(
         "domains": domains,
         "imports": imports,
         "shared_libs": shared_libs,
+        "business_rules": playbook_data.get("business_rules", []),  # §8 rules (#1660)
         "debt": playbook_data["debt"],
         "migration_state": playbook_data["migration_state"],
         "tier": playbook_data["tier"],

@@ -94,8 +94,10 @@ screens. Requires:
 
    **Step 1 — inventory the controls.** Run `controls detect` immediately after each
    `snapshot`. It returns a JSON array of `Control` records (id, kind, selector, label)
-   with `exercised_by="detected_only"`. Capture this list — it is your authoritative
-   inventory for this screen.
+   with `exercised_by="detected_only"`, **and persists them onto the screen's
+   `controls[]` in `crawl-graph.json`** (keyed by the current URL, #1623) — so the Phase-C
+   aggregator reads them without a manual merge. Capture the JSON too — it is your
+   authoritative inventory for authoring the JUDGMENT records in step 3.
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli controls detect --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
@@ -108,7 +110,9 @@ screens. Requires:
    screenshot (`<route>__<label-slug>__<id>.png`), and emits a JSON array of `Control`
    records with `exercised_by="auto"` and `data_state_change` set to the before→after
    delta. Any navigation that would leave `url_scope` is refused (`data_state_change =
-   "SCOPE_REFUSED"`) and the page is navigated back automatically.
+   "SCOPE_REFUSED"`) and the page is navigated back automatically. Like `detect`, it
+   **persists the full detected set onto the screen's `controls[]`** (#1623) — exercised
+   records supersede their `detected_only` counterparts by selector.
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli controls auto-exercise --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
@@ -140,20 +144,20 @@ screens. Requires:
    # → prints the labeled screenshot ref: "screenshots/<route>__filter-by-last-name__<id>.png"
    ```
 
-   **Step 4 — collect all Control records.** Merge the outputs from steps 1–3 into the
-   final `controls[]` array for this screen:
-   - Auto-exercised controls: take the records from `controls auto-exercise` output
-     (they already have `exercised_by="auto"` and `data_state_change`).
-   - Manually exercised controls: update the corresponding records from `controls detect`
-     with `exercised_by="agent"`, the labeled screenshot ref, and the before→after
+   **Step 4 — record the JUDGMENT controls.** `controls detect` and `controls
+   auto-exercise` already persist their records onto the screen's `controls[]` in
+   `crawl-graph.json` (#1623), so you only need to write back the controls YOU exercised
+   manually in step 3:
+   - Auto-exercised (`sort`/`dropdown`) and detected controls are already on the graph — no
+     manual step.
+   - Manually exercised controls: update the corresponding records on the screen with
+     `exercised_by="agent"`, the labeled screenshot ref, and the before→after
      `data_state_change` you observed.
    - Controls not exercised (button / other / any that could not be safely driven):
-     keep as `exercised_by="detected_only"` with `data_state_change=""`.
+     stay `exercised_by="detected_only"` with `data_state_change=""` (already recorded).
 
-   Write the merged `controls[]` onto the screen's entry in
-   `.foundry/context/runtime/.state/journeys.json` when you author that file (step 4
-   below). Every control from `controls detect` must appear — no control may be silently
-   dropped.
+   Every control from `controls detect` must appear on the screen — no control may be
+   silently dropped.
 
    **Safe-exercise judgment.** Do not exercise a control if doing so would:
    - Submit a destructive or irreversible action (anything on the plan's `deny` list —
@@ -168,21 +172,19 @@ screens. Requires:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli session start --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli goto https://staging.example.com/login --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   # Credentials resolve from the plan's auth.creds_ref (env var / gitignored file) — never inline.
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "#username" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "#password" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli submit "#login-form button" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # LOG IN with the single `login` verb — it navigates, fills BOTH fields, and submits
+   # within ONE browser/page lifetime, so a CSRF-protected multi-field form (Spring
+   # Security / Rails / Django / most server-rendered stacks) completes: the hidden CSRF
+   # token and both field values survive to submission (#1622). Separate fill→fill→submit
+   # invocations each re-`goto` the page, wiping filled fields + rotating the token, so they
+   # CANNOT complete such a form — prefer `login`. Credentials resolve from the plan's
+   # auth.creds_ref (env var / gitignored file) — never inline. The submit is form-scoped
+   # (routes to the form holding the password field, not a header search form — #1624a).
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli login "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --username-selector "#username" --password-selector "#password" --submit-selector "#login-form button" --login-url https://staging.example.com/login --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
    # MULTI-REALM login: an app may declare several `auth.profiles`, each a named realm on
-   # the same login URL but with its OWN selectors. Pick the profile, read its selectors
-   # via `login-selectors`, then fill the right realm's fields (names below are generic
-   # placeholders — a real multi-realm example is a portal whose LAN/partner/internal
-   # realms each fill a different field set):
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli login-selectors --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   # → {"username_selector": "...", "password_selector": "...", "submit_selector": "...", "login_url": "..."}
-   # Fill using THAT profile's selectors, and resolve THAT profile's creds with --profile:
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "<realm_a username_selector>" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
-   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "<realm_a password_selector>" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
+   # the same login URL but with its OWN selectors. Pass --profile to resolve that realm's
+   # selectors + login_url automatically (and --role to resolve a role's own creds):
+   "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli login "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state)" --profile realm_a --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
    # Realistic wizard/form fills pull from the plan's seed_data_ref by field name:
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "#first_name" --from-seed first_name --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state
    # Prefer STABLE selectors via --by (data-testid > role > label > text > placeholder > css):
@@ -245,12 +247,11 @@ screens. Requires:
 
       ```bash
       "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli session start --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
-      # Realm 1 of the chained login (login_profiles[0]):
-      "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli login-selectors --profile lan --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
-      "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "<lan username_selector>" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --role admin --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
-      "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli fill "<lan password_selector>" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --role admin --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin)" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
-      "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli submit "<lan submit_selector>" --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
-      # Realm 2 of the chained login (login_profiles[1]) — repeat login-selectors/fill/submit for `xtrac`.
+      # Realm 1 of the chained login (login_profiles[0]) — one `login` verb per realm resolves
+      # the realm's selectors + login_url (--profile) and the role's creds (--role), filling +
+      # submitting in one lifetime so a CSRF-protected form completes (#1622):
+      "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli login "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds user --role admin --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin)" "$("${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli creds pass --role admin --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin)" --profile lan --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
+      # Realm 2 of the chained login (login_profiles[1]) — repeat the `login` verb for `xtrac`.
       # …then deep-drive the frontiers + snapshot exactly as the single-perspective Phase B above, all under this role's --state-dir.
       "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.step_cli session end --plan .foundry/explore-plan.yaml --state-dir .foundry/context/runtime/.state/roles/admin
       ```
@@ -262,7 +263,10 @@ screens. Requires:
    Then in **Phase C** run the aggregator in **role-merge mode** — pass one `--role-graph
    <role>=<path>` per role (instead of `--crawl-graph`). It unions the per-role graphs,
    tags each screen with the role(s) that reached it, and emits a unified
-   `runtime-journeys.json` + a `RUNTIME-DISCOVERY.md` with the **Role Coverage** section:
+   `runtime-journeys.json` + a `RUNTIME-DISCOVERY.md` with the **Role Coverage** section.
+   The merge automatically **rewrites each role's screenshot refs to `roles/<role>/…`**
+   (#1624b) so the top-level `RUNTIME-DISCOVERY.md`'s screenshot links resolve to the
+   role-sliced PNGs — no manual copy of screenshots to a top-level dir is needed:
 
    ```bash
    "${CLAUDE_PLUGIN_ROOT}/engine/.venv/bin/python" -m primitives.runtime_explore.shared.journey_aggregator --role-graph admin=.foundry/context/runtime/.state/roles/admin/crawl-graph.json --role-graph teller=.foundry/context/runtime/.state/roles/teller/crawl-graph.json --journeys .foundry/context/runtime/.state/journeys.json --base-url https://staging.example.com --out .foundry/context/runtime

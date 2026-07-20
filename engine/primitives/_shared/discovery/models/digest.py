@@ -190,6 +190,14 @@ class AnalysisDigest(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     code_root: str
     mainframe_flavor: MainframeFlavor
+    #: The real resolved platform flavor (an open string over the entry-point-
+    #: registered flavor names — ``"generic"`` / ``"java_ee"`` / ``"cics_cobol"`` / …),
+    #: persisted so the continue leg reports the SAME flavor the extract leg detected
+    #: (#1650). ``mainframe_flavor`` above is a closed ``MainframeFlavor`` Literal that
+    #: defaults to ``"cics_cobol"`` when the resolved flavor is not a member, so it is
+    #: NOT a reliable flavor identity. Additive + optional: absent (``None``) on older
+    #: serialized digests, which then fall back to ``mainframe_flavor``.
+    resolved_flavor: str | None = None
     programs: list[ProgramRecord] = Field(default_factory=list)
     copybooks: list[CopybookRecord] = Field(default_factory=list)
     cics_transactions: list[CICSTransaction] = Field(default_factory=list)

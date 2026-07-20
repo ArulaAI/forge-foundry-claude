@@ -82,7 +82,11 @@ def parse_target(pairs: list[str]) -> tuple[TargetStack, list[str]]:
         explicit_version = explicit_version.strip()
 
         known_version, known_label = latest_known(key, value)
-        registry_matched = bool(known_version)
+        # A registry match means the entry EXISTS (label resolved) — independent of
+        # whether the value carries a meaningful version. Versionless targets like
+        # api_style=rest / orchestration=eks are registered with latest: "" but still
+        # render a clean label, so they are matched (not treated as "unknown").
+        registry_matched = bool(known_label)
 
         if not registry_matched:
             warnings.append(

@@ -334,7 +334,11 @@ def run_pipeline_continue(
 
     return PipelineResult(
         run_dir=str(run_dir),
-        flavor=analysis_obj.mainframe_flavor,
+        # Report the real resolved flavor persisted by the extract leg, not the
+        # closed mainframe_flavor Literal (which defaults to "cics_cobol" whenever the
+        # resolved flavor — e.g. "generic"/"java_ee" — is not a member), so the two
+        # legs agree (#1650). Older digests without resolved_flavor fall back.
+        flavor=analysis_obj.resolved_flavor or analysis_obj.mainframe_flavor,
         accuracy=report.accuracy,
         finding_count=len(report.findings),
         playbook_path=playbook_path,
