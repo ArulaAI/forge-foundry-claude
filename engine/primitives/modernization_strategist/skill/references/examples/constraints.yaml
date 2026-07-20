@@ -1,0 +1,27 @@
+# constraints.yaml — optional constraints for /mod-sql-strategist (M3).
+#
+# Passed via `--constraints ./constraints.yaml`. Per the SPEC, these are folded
+# into the Stage E narrative and bias the Stage C `deferred` list (higher-risk /
+# forbidden-tech clusters get pushed later). Freeform YAML with the documented
+# constraint families below.
+#
+# NOTE: a malformed/schema-invalid constraints file exits 5 (not 2) — fix the
+# YAML before re-running.
+
+# Team capacity — smaller teams → the sequencer defers more, extracts fewer
+# clusters per wave.
+team_size: 4
+
+# Latency budget (ms) the modernized services must meet — flags hot-path
+# procedures that need extra care.
+latency_budget_ms: 200
+
+# Data classification — drives handling notes in the narrative (e.g. PII/PCI
+# clusters get stricter boundary + encryption callouts).
+data_classification: pii
+
+# Forbidden target tech — the strategist avoids recommending these in the plan.
+forbidden_tech:
+  - stored-procedures-as-business-logic
+  - triggers-carrying-rules
+  - cross-schema-joins

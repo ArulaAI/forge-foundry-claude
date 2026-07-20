@@ -1,0 +1,19 @@
+# .foundry/repos.yaml — full 4-tier enterprise split (ui / api / db / iac).
+#
+# Drop this at <project>/.foundry/repos.yaml and run /mod-modernization (or
+# "${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-modernization-scope) from the project root. The chain
+# correlates all four repos into ONE system-map.
+#
+# Rules (enforced by read_repo_set):
+#   - The map key MUST equal the entry's `role` (ui/api/db/iac).
+#   - `path` is relative to the project root. A `../sibling` path is the
+#     idiomatic layout (repos checked out side by side); it resolves under the
+#     project's PARENT dir (the trusted "siblings" root, #1665). A path that
+#     escapes that root is rejected as traversal — use `allowed_alt_roots:`
+#     (see repos.allowed-alt-roots.yaml) for repos parked elsewhere.
+#   - Every referenced dir must exist.
+repos:
+  ui:  { path: ../web-ui,     role: ui }
+  api: { path: ../orders-api, role: api }
+  db:  { path: ../orders-db,  role: db }
+  iac: { path: ../infra,      role: iac }

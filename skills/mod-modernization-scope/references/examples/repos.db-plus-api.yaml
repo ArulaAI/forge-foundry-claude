@@ -1,0 +1,12 @@
+# .foundry/repos.yaml — a headless batch/DB split (no UI, no IaC).
+#
+# Not every system has all four tiers. A legacy batch job that reads/writes a
+# database is just two repos: the batch code (`api` role — it owns the handlers /
+# jobs / procedures) and the schema (`db` role). Omit the roles you don't have;
+# the chain correlates whatever is present.
+#
+# (Mirrors the charitable-giving batch test bed: a Java batch repo + an Oracle
+# PL/SQL schema repo, wired with sibling paths.)
+repos:
+  db:  { path: ../charitable-giving-db,    role: db }
+  api: { path: ../charitable-giving-batch, role: api }

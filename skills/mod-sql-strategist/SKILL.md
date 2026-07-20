@@ -123,6 +123,11 @@ delegate to `"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sql-strategist` — 
 ownership split, sequencing, antipattern detection, narrative synthesis, or diagram rendering
 yourself.
 
+> **Config example.** A sample `constraints.yaml` (team-size / latency-budget / data-classification /
+> forbidden-tech, per the SPEC's `--constraints` families) lives at `references/examples/constraints.yaml`.
+> The SPEC documents `--constraints`; confirm the flag against `"${CLAUDE_PLUGIN_ROOT}/bin/forge-validate" mod-sql-strategist --help`
+> for your installed version before relying on it (see the example's README).
+
 ### Skill-first mode (in-session, default)
 
 Use `--extract-only` for the first pass, then `--continue --judgments <path>` after writing

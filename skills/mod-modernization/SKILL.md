@@ -61,6 +61,12 @@ bespoke per-stage analysis. The run is **stateful and resumable** and each stage
    or `failed`. If no state file exists, start fresh at stage 1 with all five stages
    `pending`. Honor `--start-from STAGE` as an explicit resume-cursor override.
 
+   **Config examples.** Ready-to-adapt setups for the whole chain — end-to-end `/mod-modernization`
+   invocations (multi-repo + `--target`, twin-repo `--legacy`/`--twin-target`, `--feature` scoping)
+   and a sample `.foundry/hla/` stated-architecture doc — are indexed in
+   `references/examples/README.md`. The `.foundry/repos.yaml` and `--target` example files
+   themselves live with the synthesizer (`/mod-modernization-scope`).
+
    **Detect the multi-repo repo-set (MR7, #1556).** Enterprise systems split their UI /
    API / DB / IaC tiers across **separate repositories**. Before resolving a single
    positional `<repo>`, check for a repo-set: either a **`.foundry/repos.yaml`** manifest
