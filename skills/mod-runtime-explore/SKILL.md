@@ -26,7 +26,9 @@ Invoke when the operator wants the app's real user journeys discovered by explor
 screens. Requires:
 
 - a running target and an `.foundry/explore-plan.yaml` (base URL, url_scope allow/deny,
-  budget, auth reference — secrets by reference, never inline);
+  budget, auth reference — secrets by reference, never inline). **Copy-pasteable plans** for a
+  public/local instance, an auth-gated single-role app, and a multi-role app (all schema-validated)
+  are indexed in `references/examples/README.md`;
 - a local Playwright install (the optional `[browser]` extra) **and**
   `playwright install chromium`, using the form that matches how the CLI was installed.
   For a git-based `uv tool` install (the pinned-tag default):

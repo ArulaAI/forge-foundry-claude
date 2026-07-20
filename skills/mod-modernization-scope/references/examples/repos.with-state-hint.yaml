@@ -1,0 +1,13 @@
+# .foundry/repos.yaml — with the optional `state:` migration-state hint.
+#
+# `state` is an OPTIONAL, UNTRUSTED prior: legacy | partial | modern. It is a
+# hint only — the chain derives the real migration state from the code (MR3/MR4)
+# and derive-from-code ALWAYS wins. Use it to nudge the "what's-left" filter when
+# you already know a tier's status; omit it when you don't (a repo with no
+# reliable signal should simply leave it off).
+repos:
+  ui:  { path: ../web-ui,     role: ui,  state: legacy }   # untouched monolith UI
+  api: { path: ../orders-api, role: api, state: partial }  # rewrite in progress
+  db:  { path: ../orders-db,  role: db,  state: modern }   # already migrated
+  # iac has no reliable state signal → omit `state` entirely.
+  iac: { path: ../infra,      role: iac }

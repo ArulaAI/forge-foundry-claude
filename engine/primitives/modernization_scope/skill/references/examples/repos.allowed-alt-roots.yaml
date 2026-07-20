@@ -1,0 +1,16 @@
+# .foundry/repos.yaml — repos parked OUTSIDE the siblings tree.
+#
+# By default a repo `path` may only resolve under the project's parent dir (the
+# "siblings" root). To point at repos checked out somewhere else (e.g. a shared
+# /srv/checkouts), list each such parent prefix under the optional top-level
+# `allowed_alt_roots:` — an operator opt-in (mirrors the copier's allowlist).
+#
+# A repo path is accepted when it resolves under EITHER the siblings root OR one
+# of these prefixes. Absolute paths are fine as long as they land under a trusted
+# prefix. A leading `-` on any value is rejected (flag-injection guard).
+allowed_alt_roots:
+  - /srv/checkouts
+  - ~/work/legacy-repos      # a leading ~ expands to $HOME
+repos:
+  api: { path: /srv/checkouts/orders-api,   role: api }
+  db:  { path: ~/work/legacy-repos/orders-db, role: db }

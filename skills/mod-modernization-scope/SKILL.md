@@ -311,6 +311,11 @@ flowchart TD
 
 ## Multi-repo migration-state confirmation (MR4, #1553)
 
+> **Config examples.** Copy-pasteable starting points for every input this synthesizer takes —
+> `.foundry/repos.yaml` (multi-repo split, sibling paths, `allowed_alt_roots`, `state:` hint, db+api
+> batch split), `--target` stacks (Spring-on-EKS, React/AWS), and the `--legacy`/`--twin-target`
+> twin-repo delta — are indexed in `references/examples/README.md`.
+
 When the run spans **multiple repositories** (a `--repo role=path` set, or `.foundry/repos.yaml`),
 the extract leg additionally scores each repo's on-disk tree for framework-generation evidence
 (the MR3 deterministic scorer → a `legacy` / `partial` / `modern` band + confidence) and defers the

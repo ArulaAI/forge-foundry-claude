@@ -1,0 +1,27 @@
+# explore-plan.yaml — single-realm auth-gated app.
+#
+# One login form, one set of credentials. The crawler logs in via the agent-driven
+# login step, then crawls within url_scope.
+#
+# SECRETS ARE BY REFERENCE ONLY — `creds_ref` is an env-var NAME (creds_from: env)
+# or a gitignored file PATH (creds_from: file). NEVER put a literal username/
+# password/token in this file.
+base_url: "https://staging.example.com/app"
+url_scope:
+  allow:
+    - "https://staging.example.com/app/**"
+  deny:
+    - "**/logout**"
+    - "**/admin/delete/**"          # don't exercise destructive admin actions
+    - "**/checkout/confirm**"        # don't place real orders
+auth:
+  mode: agent_login
+  login_url: "https://staging.example.com/app/login"
+  creds_from: env
+  creds_ref: APP_STAGING_CREDS       # env var holds {"username": "...", "password": "..."}
+# Optional: realistic form-fill values by field name, from a gitignored file.
+seed_data_ref: ".secrets/seed-data.yaml"
+budget:
+  max_pages: 120
+  max_depth: 6
+  wait_until: networkidle

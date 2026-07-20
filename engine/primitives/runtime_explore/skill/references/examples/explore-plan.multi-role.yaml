@@ -1,0 +1,50 @@
+# explore-plan.yaml — multi-role exploration (admin / vet / user).
+#
+# `roles` runs a FULL separate crawl per persona, then merges + role-tags the
+# results (so you see which screens/features each role can reach). Requires an
+# `auth` block. Worked end-to-end against PetClinic with three roles.
+#
+# Two pieces:
+#   auth.profiles — the login-form MECHANICS (selectors + shared login_url).
+#   roles         — the PERSONAS: each names the profile(s) to log in through
+#                   (login_profiles) and supplies its OWN creds_ref (which wins
+#                   over the profile's default).
+#
+# SECRETS BY REFERENCE ONLY — every creds_ref is an env-var NAME or a gitignored
+# file PATH. Never a literal secret.
+base_url: "http://localhost:8080/petclinic"
+url_scope:
+  allow:
+    - "http://localhost:8080/petclinic/**"
+  deny:
+    - "**/logout**"
+
+auth:
+  mode: agent_login
+  login_url: "/login"                          # shared by every realm (relative to base_url)
+  profiles:
+    petclinic_form:
+      username_selector: 'input[name="username"]'
+      password_selector: 'input[name="password"]'
+      submit_selector: 'button[type="submit"]'
+      creds_from: env                          # profile default (schema-required); ignored when a role's creds win
+      creds_ref: PETCLINIC_SERVICE_CREDS
+
+roles:                                         # one full crawl per persona
+  admin:
+    login_profiles: [petclinic_form]           # single entry = single-step login
+    creds_from: env
+    creds_ref: PETCLINIC_ADMIN_CREDS           # env var: {"username": "...", "password": "..."}
+  vet:
+    login_profiles: [petclinic_form]
+    creds_from: env
+    creds_ref: PETCLINIC_VET_CREDS
+  user:
+    login_profiles: [petclinic_form]
+    creds_from: file
+    creds_ref: ".secrets/petclinic-user.yaml"  # gitignored: {username: ..., password: ...}
+
+budget:
+  max_pages: 200
+  max_depth: 6
+  wait_until: networkidle

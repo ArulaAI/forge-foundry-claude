@@ -1,0 +1,16 @@
+# explore-plan.yaml — minimal plan for a public or local dev instance (no auth).
+#
+# The two required keys are `base_url` (where the crawl starts) and `url_scope`
+# (allow/deny globs checked before EVERY navigation — the containment guard;
+# deny wins). Everything else is optional.
+base_url: "http://localhost:8080/petclinic"
+url_scope:
+  allow:
+    - "http://localhost:8080/petclinic/**"
+  deny:
+    - "**/logout**"          # never follow a link that ends the session
+# Optional budget caps (defaults apply if omitted):
+budget:
+  max_pages: 60
+  max_depth: 4
+  wait_until: networkidle    # domcontentloaded | networkidle | load
