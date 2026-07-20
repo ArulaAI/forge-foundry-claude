@@ -7,15 +7,12 @@ guard (``..``-before-``.resolve()`` discipline).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
 from primitives._shared.modernization.models import RepoEntry, RepoSet, TwinRepoPair
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class RepoSetNotFound(FileNotFoundError):
@@ -26,32 +23,132 @@ class RepoSetParseError(ValueError):
     """Raised when .foundry/repos.yaml is invalid YAML or fails schema validation."""
 
 
-def _reject_unsafe_path(raw_path: str, label: str = "path") -> None:
-    """SEC-7: reject a raw path string before any ``.resolve()`` call.
+def _reject_flag_injection(raw_path: str, label: str = "path") -> None:
+    """SEC-7: reject a raw path that would be parsed as a CLI flag.
 
-    Mirrors ``PrimitiveOverride._reject_unsafe_version`` — checks the RAW
-    value so a ``..`` that would survive ``.resolve()`` normalization is still
-    caught at parse time.
+    A leading ``-`` is rejected on the RAW value before any ``.resolve()`` /
+    ``git clone --branch`` argv construction (flag injection). Unlike the copier's
+    ``pinned_overrides`` guard, ``..`` is NOT blanket-rejected here — a repos.yaml
+    ``../sibling`` is the idiomatic multi-repo layout; traversal is bounded instead
+    by :func:`_trusted_roots` containment (#1665).
     """
-    parts = raw_path.replace("\\", "/").split("/")
-    if ".." in parts:
-        raise RepoSetParseError(
-            f"invalid {label} {raw_path!r}: must not contain a '..' segment (SEC-7)"
-        )
     if raw_path.startswith("-"):
         raise RepoSetParseError(
             f"invalid {label} {raw_path!r}: must not start with '-' (flag injection, SEC-7)"
         )
 
 
-def _validate_repo_dir(raw_path: str, project_root: Path, label: str = "path") -> None:
-    """SEC-7: after raw checks, resolve relative to project_root and require is_dir()."""
-    _reject_unsafe_path(raw_path, label=label)
-    resolved = (project_root / raw_path).resolve()
+def _trusted_roots(project_root: Path, allowed_alt_roots: tuple[str, ...] = ()) -> list[Path]:
+    """The resolved prefixes a repo path may resolve under (#1665).
+
+    A repos.yaml ``../sibling`` path is legitimate: the ui/api/db repos are
+    commonly checked out side by side. So instead of blanket-rejecting ``..``
+    (the copier's ``pinned_overrides`` discipline, where the threat is a
+    redirected primitive-source clone), a repo path is allowed when its resolved
+    location stays under a trusted prefix:
+
+    * ``project_root.parent`` — the siblings directory (always trusted); this is
+      what makes ``../sibling-repo`` work while ``../../elsewhere`` and absolute
+      paths outside are still rejected.
+    * any prefix the operator explicitly opts into via ``allowed_alt_roots:`` in
+      repos.yaml (mirrors ``manifest.allowed_alt_roots`` in the copier, #726) —
+      for repos parked outside the siblings tree.
+
+    Returns the resolved trusted prefixes.
+    """
+    roots = [project_root.resolve().parent]
+    roots.extend(Path(_expand_user_path(alt)).resolve() for alt in allowed_alt_roots)
+    return roots
+
+
+def _expand_user_path(raw_path: str) -> str:
+    """Expand a leading ``~`` / ``~user`` in *raw_path* (safe post-SEC-7-raw-checks).
+
+    A ``--repo role=path`` value is a single argv token, so the shell never expands
+    ``~`` in the path portion; without this a ``~/projects/x`` is treated as a
+    relative segment and joined onto the project root (``<root>/~/projects/x``),
+    producing a nonsensical "not an existing directory" error (#1651). Only a
+    leading ``~`` is expanded (``os.path.expanduser`` no-ops otherwise). Applied
+    AFTER the ``..``/leading-``-`` SEC-7 raw checks so those guards see the raw
+    value first; ``~`` cannot smuggle a ``..`` past them (expansion runs second).
+    """
+    return str(Path(raw_path).expanduser()) if raw_path.startswith("~") else raw_path
+
+
+def _validate_repo_dir(
+    raw_path: str,
+    project_root: Path,
+    label: str = "path",
+    allowed_alt_roots: tuple[str, ...] = (),
+) -> None:
+    """SEC-7: reject flag injection, then resolve and require containment + is_dir().
+
+    A ``../sibling`` path is permitted when it resolves under a trusted root
+    (``project_root.parent`` or an ``allowed_alt_roots`` prefix, #1665); a path
+    resolving outside every trusted root is rejected as traversal.
+    """
+    _reject_flag_injection(raw_path, label=label)
+    resolved = (project_root / _expand_user_path(raw_path)).resolve()
+    roots = _trusted_roots(project_root, allowed_alt_roots)
+    if not any(resolved.is_relative_to(root) for root in roots):
+        raise RepoSetParseError(
+            f"invalid {label} {raw_path!r}: resolved path {resolved} escapes the trusted "
+            f"roots {[str(r) for r in roots]} (traversal, SEC-7). Add its parent to "
+            f"repos.yaml 'allowed_alt_roots:' to opt in."
+        )
     if not resolved.is_dir():
         raise RepoSetParseError(
             f"invalid {label} {raw_path!r}: resolved path {resolved} is not an existing directory"
         )
+
+
+def _parse_allowed_alt_roots(raw: dict[str, object], repos_path: Path) -> tuple[str, ...]:
+    """Parse the optional top-level ``allowed_alt_roots:`` list from repos.yaml (#1665).
+
+    Each entry is an extra trusted prefix a repo ``path`` may resolve under (in
+    addition to the always-trusted ``project_root.parent``). Must be a list of
+    strings; a leading ``-`` is rejected (flag injection) on the raw value.
+    Absent → empty tuple (only the siblings dir is trusted).
+    """
+    block = raw.get("allowed_alt_roots")
+    if block is None:
+        return ()
+    if not isinstance(block, list):
+        raise RepoSetParseError(
+            f"{repos_path}: 'allowed_alt_roots' must be a list, got {type(block).__name__}."
+        )
+    roots: list[str] = []
+    for item in block:
+        if not isinstance(item, str):
+            raise RepoSetParseError(
+                f"{repos_path}: 'allowed_alt_roots' entries must be strings, got {item!r}."
+            )
+        if item.startswith("-"):
+            raise RepoSetParseError(
+                f"{repos_path}: allowed_alt_roots entry {item!r} must not start with '-'."
+            )
+        roots.append(item)
+    return tuple(roots)
+
+
+def _alt_roots_from_manifest(project_root: Path) -> tuple[str, ...]:
+    """Best-effort read of ``allowed_alt_roots:`` for --repo override validation (#1665).
+
+    Returns the manifest's trusted alt-roots (or empty when no/invalid manifest);
+    a ``--repo`` override may resolve under the same operator-opted-in prefixes as
+    a manifest path. Never raises — a malformed manifest yields no extra roots (the
+    override then falls back to the siblings-only default).
+    """
+    repos_path = project_root / ".foundry" / "repos.yaml"
+    if not repos_path.is_file():
+        return ()
+    try:
+        raw = yaml.safe_load(repos_path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return _parse_allowed_alt_roots(raw, repos_path)
+    except (yaml.YAMLError, RepoSetParseError, OSError):
+        return ()
+    return ()
 
 
 def read_repo_set(project_root: Path) -> RepoSet:
@@ -84,6 +181,8 @@ def read_repo_set(project_root: Path) -> RepoSet:
     if not isinstance(raw, dict):
         raise RepoSetParseError(f"{repos_path} must be a YAML mapping, got {type(raw).__name__}.")
 
+    allowed_alt_roots = _parse_allowed_alt_roots(raw, repos_path)
+
     repos_block = raw.get("repos")
     if repos_block is None:
         return RepoSet(entries=())
@@ -104,7 +203,12 @@ def read_repo_set(project_root: Path) -> RepoSet:
             )
 
         raw_path = entry_data.get("path", "")
-        _validate_repo_dir(str(raw_path), project_root, label=f"repos[{map_key!r}].path")
+        _validate_repo_dir(
+            str(raw_path),
+            project_root,
+            label=f"repos[{map_key!r}].path",
+            allowed_alt_roots=allowed_alt_roots,
+        )
 
         try:
             entry = RepoEntry(**entry_data)
@@ -142,15 +246,23 @@ def build_repo_set(project_root: Path, repo_overrides: tuple[str, ...]) -> RepoS
     if not repo_overrides:
         return base
 
+    # An override's ``../sibling`` gets the same trusted-root containment as a
+    # manifest path, honoring any repos.yaml ``allowed_alt_roots:`` (#1665).
+    override_alt_roots = _alt_roots_from_manifest(project_root)
+
     entries_by_role: dict[str, RepoEntry] = {e.role: e for e in base.entries}
 
     for token in repo_overrides:
         if "=" not in token:
             raise RepoSetParseError(f"--repo override must be 'role=path', got {token!r}")
         role, raw_path = token.split("=", 1)
-        _validate_repo_dir(raw_path, project_root, label=f"--repo {role!r}")
+        _validate_repo_dir(
+            raw_path, project_root, label=f"--repo {role!r}", allowed_alt_roots=override_alt_roots
+        )
+        # Store the ~-expanded path so downstream consumers resolve the real dir,
+        # not a literal '~' segment (#1651). SEC-7 raw checks already ran above.
         try:
-            entry = RepoEntry(role=role, path=raw_path)  # type: ignore[arg-type]
+            entry = RepoEntry(role=role, path=_expand_user_path(raw_path))  # type: ignore[arg-type]
         except (ValidationError, TypeError) as exc:
             raise RepoSetParseError(
                 f"--repo override {token!r} does not match the expected schema: {exc}"
@@ -168,9 +280,10 @@ def build_repo_set(project_root: Path, repo_overrides: tuple[str, ...]) -> RepoS
 def _safe_repo_path(raw: str, project_root: Path) -> str:
     """SEC-7: validate a raw twin-repo path and return the resolved absolute path.
 
-    Mirrors :func:`_reject_unsafe_path` / :func:`_validate_repo_dir`: checks the
-    RAW value before ``.resolve()`` so a ``..`` that would survive normalization is
-    still caught at parse time.
+    Mirrors :func:`_validate_repo_dir`: rejects a leading ``-`` on the raw value,
+    then resolves and requires the result to stay under a trusted root (a
+    ``../sibling`` twin is allowed; a path escaping the siblings root is rejected
+    as traversal, #1665).
 
     Args:
         raw: The raw path string (CLI argument value).
@@ -186,9 +299,18 @@ def _safe_repo_path(raw: str, project_root: Path) -> str:
     """
     if raw.startswith("-"):
         raise ValueError(f"repo path may not start with '-': {raw!r}")
-    if ".." in raw.replace("\\", "/").split("/"):
-        raise ValueError(f"repo path may not contain '..': {raw!r}")
-    resolved = (project_root / raw).resolve()
+    # Expand a leading ~ AFTER the raw leading-'-' check (#1651) so ~/path resolves
+    # to the user's home rather than a literal '~' segment under project_root.
+    resolved = (project_root / _expand_user_path(raw)).resolve()
+    # A twin legacy/rewrite pair is commonly checked out beside the project (#1665):
+    # allow ``../sibling`` when it stays under the trusted siblings root; a path that
+    # escapes it is rejected as traversal.
+    roots = _trusted_roots(project_root)
+    if not any(resolved.is_relative_to(root) for root in roots):
+        raise ValueError(
+            f"repo path {raw!r} resolves to {resolved}, which escapes the trusted roots "
+            f"{[str(r) for r in roots]} (traversal, SEC-7)"
+        )
     if not resolved.is_dir():
         raise ValueError(f"repo path does not resolve to a directory: {raw!r}")
     return str(resolved)

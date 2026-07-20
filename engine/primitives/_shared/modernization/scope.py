@@ -844,6 +844,38 @@ def _nfr_section(j: _Spec) -> list[str]:
     )
 
 
+#: Max distinct labeled edges rendered per (src, dst) node pair in the C4 diagram
+#: before collapsing the remainder into a single "+N more" edge — keeps a spec whose
+#: app node reads 20 tables from becoming an unreadable wall of parallel edges (#1661).
+_MAX_EDGES_PER_PAIR = 6
+
+
+def _component_edges(edges: Any) -> list[tuple[str, str, str]]:
+    """Build labeled, de-duplicated C4 edges from the system-map edges (#1661).
+
+    Each edge is labeled by its ``evidence`` (the ``data:<table>`` / interface join
+    key) rather than the generic ``kind`` (which is ``"interface"`` for EVERY data
+    edge), so a spec's component diagram shows one **named** edge per table instead
+    of N identical unlabeled ``interface`` lines. Identical (src, dst, label) tuples
+    are de-duplicated; when a single (src, dst) pair carries more than
+    :data:`_MAX_EDGES_PER_PAIR` distinct edges, the surplus collapses into one
+    ``"+N more"`` edge to keep the diagram legible.
+    """
+    by_pair: dict[tuple[str, str], list[str]] = {}
+    for edge in edges:
+        label = (getattr(edge, "evidence", "") or edge.kind or "depends on").strip()
+        labels = by_pair.setdefault((edge.src, edge.dst), [])
+        if label not in labels:
+            labels.append(label)
+    out: list[tuple[str, str, str]] = []
+    for (src, dst), labels in by_pair.items():
+        shown = labels[:_MAX_EDGES_PER_PAIR]
+        out.extend((src, dst, lbl) for lbl in shown)
+        if len(labels) > _MAX_EDGES_PER_PAIR:
+            out.append((src, dst, f"+{len(labels) - _MAX_EDGES_PER_PAIR} more"))
+    return out
+
+
 def _dependencies(system_map: SystemMap | None, target: Any | None = None) -> list[str]:
     """§17 — dependencies & sequencing: the system-map components this spec touches.
 
@@ -869,7 +901,7 @@ def _dependencies(system_map: SystemMap | None, target: Any | None = None) -> li
     contexts = [
         (node.id, f"{node.id} ({node.kind})" if node.kind else node.id) for node in system_map.nodes
     ]
-    edges = [(edge.src, edge.dst, edge.kind or "depends on") for edge in system_map.edges]
+    edges = _component_edges(system_map.edges)
     # Track B (#1427): thread the typed inbound entry points into the C4 diagram
     # as a distinct inbound tier. Empty → no tier (byte-identical to prior output).
     ep_tuples = [(ep.name, ep.kind, ep.target) for ep in getattr(system_map, "entry_points", [])]

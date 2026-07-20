@@ -10,6 +10,7 @@ from primitives.functional_map.shared.models import (
     FunctionalDigest,
     FunctionalMapReport,
     RoleReconciliation,
+    relativize_digest,
     thread_business_rules,
 )
 from primitives.functional_map.shared.recon import run_recon
@@ -195,6 +196,16 @@ def run(
         except FileNotFoundError as e:
             raise SystemExit(2) from e
         syn = validate_synthesis(json.loads(raw))
+        # #1640: persist the authored judgments to the canonical ``run/synthesis.json``
+        # so the §SP-A.2 sliced pass can auto-resume from them (the auto-resume above
+        # looks for exactly this file). The whole-app continue leg is normally invoked
+        # with ``--continue --judgments <somewhere>/synthesis.json`` whose path may NOT
+        # be ``run_dir/synthesis.json``; without this copy the file is absent and the
+        # bare ``--system-map`` re-invocation WARNs "no slices emitted". Idempotent:
+        # skip the write when the judgments file already IS the canonical location.
+        canonical_synthesis = run_dir / "synthesis.json"
+        if continue_path.resolve() != canonical_synthesis.resolve():
+            canonical_synthesis.write_text(raw, encoding="utf-8")
         # SP-E (#1385): assign deterministic BR-NNN ids + derive each rule's
         # ``enforced_at`` (file:line) from its ``step_ref``→endpoint mapping, riding
         # ALONGSIDE the harness-authored step_ref/rule/source/rationale. Empty when
@@ -232,6 +243,13 @@ def run(
     # Phase A + B
     recon = run_recon(code_root, stack_flavor=stack_flavor, spec=spec)
     digest = extract(recon)
+    # #1639: extraction walks *code_root* with absolute Paths, so every ``file``
+    # citation is absolute. The continue-leg refcheck rejects absolute refs as
+    # path_traversal (exit 6) — the tool would emit output its own validator
+    # forbids. Normalize to repo-relative once here, before persisting: the
+    # continue leg reloads this digest and derives FlowStep.file / enforced_at from
+    # these endpoints, so the whole artifact stays refcheck-clean and portable.
+    digest = relativize_digest(digest, code_root)
     _write_analysis(run_dir, digest)
 
     if no_synthesis or extract_only:

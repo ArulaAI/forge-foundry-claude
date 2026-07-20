@@ -6,11 +6,12 @@ Orchestrates the app-tier modernization flow (design spec §4-§6):
       → (extract) spec/ADR skeletons + synthesis_prompts.json  (exit 7)
       → (continue) merge authored judgments → specs + ADRs + ROADMAP + refcheck
 
-Requires the four analysis artifacts (functional-map S61, db-schema M1,
-api-contract S40, app-digest from mod-app-analysis). A missing *required*
-artifact hard-errors naming the analyzer to run (``ArtifactMissingError`` → the
-CLI exits 2). Pure/deterministic apart from filesystem I/O and the injected
-``generated_at`` for reproducible golden output.
+Requires three analysis artifacts (functional-map S61, db-schema M1, app-digest
+from mod-app-analysis); the api-contract (S40) is a **gracefully-skippable**
+fourth layer (#1638) — absent → its correlation layer is omitted, not an error.
+A missing *required* artifact hard-errors naming the analyzer to run
+(``ArtifactMissingError`` → the CLI exits 2). Pure/deterministic apart from
+filesystem I/O and the injected ``generated_at`` for reproducible golden output.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from primitives._shared.modernization.adapters import (
     api_to_digest,
     app_digest_to_digest,
     discover_runtime_journeys,
+    extract_data_field_mappings,
     functional_map_to_digest,
     functional_map_to_entry_points,
     functional_map_to_inventory,
@@ -148,11 +150,18 @@ _DISCOVERY: dict[str, tuple[str, str]] = {
 
 @dataclass(frozen=True)
 class DiscoveredArtifacts:
-    """The four resolved artifact paths."""
+    """The four resolved artifact paths.
+
+    ``api`` is ``None`` when the S40 api-contract stage was legitimately skipped
+    (no OpenAPI contract served — common for server-rendered monoliths). The
+    api-contract correlation layer is then omitted; the ``.#ui → .#app → .#db``
+    thread still forms because the app/handler unit exposes the functional-map
+    routes (#1638). The other three artifacts are always required.
+    """
 
     functional_map: Path
     schema: Path
-    api: Path
+    api: Path | None
     app_digest: Path
 
 
@@ -207,14 +216,21 @@ def discover_artifacts(
     api: Path | None = None,
     app_digest: Path | None = None,
 ) -> DiscoveredArtifacts:
-    """Auto-discover the four required artifacts under *context_root*.
+    """Auto-discover the required artifacts under *context_root*.
 
     Override flags (``functional_map`` / ``schema`` / ``api`` / ``app_digest``)
     take precedence over auto-discovery. A missing *required* artifact raises
     :class:`ArtifactMissingError` naming the analyzer to run.
+
+    ``api`` (S40 api-contract) is **optional** (#1638): when neither an override
+    nor an auto-discovered ``api/api-contract.json`` is present it resolves to
+    ``None`` — a legitimately-skipped correlation layer (matching the documented
+    graceful-skip contract), NOT a hard error. A supplied ``api`` *override* that
+    doesn't exist still errors (an explicit request for a missing file is a
+    mistake, not a skip).
     """
 
-    def _resolve(logical: str, override: Path | None) -> Path:
+    def _resolve(logical: str, override: Path | None, *, optional: bool = False) -> Path | None:
         rel, analyzer = _DISCOVERY[logical]
         if override is not None:
             if not override.is_file():
@@ -232,16 +248,24 @@ def discover_artifacts(
             return found
         candidate = context_root / rel
         if not candidate.is_file():
+            if optional:
+                return None
             raise ArtifactMissingError(
                 f"no {Path(rel).name} under {candidate.parent} — run {analyzer} first"
             )
         return candidate
 
+    functional_map_path = _resolve("functional_map", functional_map)
+    schema_path = _resolve("schema", schema)
+    app_digest_path = _resolve("app_digest", app_digest)
+    assert functional_map_path is not None  # required — _resolve raises otherwise
+    assert schema_path is not None  # required — _resolve raises otherwise
+    assert app_digest_path is not None  # required — _resolve raises otherwise
     return DiscoveredArtifacts(
-        functional_map=_resolve("functional_map", functional_map),
-        schema=_resolve("schema", schema),
-        api=_resolve("api", api),
-        app_digest=_resolve("app_digest", app_digest),
+        functional_map=functional_map_path,
+        schema=schema_path,
+        api=_resolve("api", api, optional=True),
+        app_digest=app_digest_path,
     )
 
 
@@ -351,7 +375,11 @@ def build_digests(
     """
     fm_json = _load(artifacts.functional_map)
     fm = functional_map_to_digest(fm_json, code_root=f"{code_root}#ui")
-    api = api_to_digest(_load(artifacts.api), code_root=f"{code_root}#api")
+    # api-contract is a gracefully-skippable layer (#1638): when absent, feed the
+    # adapter an empty dict — every field safe-defaults to empty, yielding an empty
+    # ``.#api`` unit (no exposed operations, no debt) exactly as a skip should.
+    api_json = _load(artifacts.api) if artifacts.api is not None else {}
+    api = api_to_digest(api_json, code_root=f"{code_root}#api")
     app = app_digest_to_digest(_load(artifacts.app_digest), code_root=f"{code_root}#app")
     db = schema_to_digest(_load(artifacts.schema), code_root=f"{code_root}#db")
 
@@ -518,6 +546,31 @@ def attach_provision_edges(
     return system_map.model_copy(update=update)
 
 
+def _warn_dropped_repos(skipped: list[str]) -> None:
+    """Surface repos that contributed no artifact LOUDLY (#1648).
+
+    A declared ``--repo`` contributing NO node drops a whole tier from the
+    correlation. Print to stderr (not only via the logger, whose visibility depends
+    on the caller's logging config) with the expected app-digest path per repo, so a
+    name/path mismatch is actionable rather than a silent gap in the system-map.
+    """
+    print(
+        f"mod-modernization-scope: WARNING — {len(skipped)} declared repo(s) "
+        "contributed NO artifact and were dropped from the system-map. This is "
+        "usually a name/path mismatch: the per-repo app-digest is looked up by the "
+        "repo's directory basename. Ensure /mod-app-analysis wrote app-digest.json "
+        "to the path shown for each repo below:",
+        file=sys.stderr,
+    )
+    for entry in skipped:
+        print(f"  - {entry}", file=sys.stderr)
+    _LOG.warning(
+        "mod-modernization-scope: %d repo(s) contributed no artifact and were dropped: %s",
+        len(skipped),
+        "; ".join(skipped),
+    )
+
+
 def build_system_map_from_repo_set(
     repo_set: RepoSet,
     context_root: Path,
@@ -613,14 +666,15 @@ def build_system_map_from_repo_set(
         if repo_digests:
             all_digests.extend(repo_digests)
         else:
-            skipped.append(repo.path)
+            # Name the app-digest path we looked for so the operator can see a
+            # name/path mismatch immediately (#1648): the per-repo digest is keyed
+            # by the repo's directory basename, so an app-digest written under a
+            # different --context-dir name is not found and the tier is dropped.
+            expected = context_root / "modernization" / repo_name / "app-digest.json"
+            skipped.append(f"{repo.role}={repo.path} (expected {expected})")
 
     if skipped:
-        _LOG.warning(
-            "mod-modernization-scope: %d repo(s) contributed no artifact and were skipped: %s",
-            len(skipped),
-            ", ".join(skipped),
-        )
+        _warn_dropped_repos(skipped)
 
     system_map = build_system_map(
         all_digests,
@@ -1352,6 +1406,59 @@ _SPEC_INSTRUCTION_FR_SUFFIX = (
     "requirements the functional analysis did not surface."
 )
 
+#: Directive when per-component facts (§8 business rules + M1 schema field-mappings)
+#: are attached — the grounding for a non-web tier (#1660/#1659).
+_COMPONENT_FACTS_DIRECTIVE = (
+    "\n\nGROUND from the attached facts: `business_rules` (this context's rules mined "
+    "from the playbook §8 Business Rules Catalog, each with a `source` file:line) and "
+    "`data_field_mappings` (the M1 schema's legacy `table.column` + type/PK/FK/PII "
+    "detail). ENUMERATE one R- per distinct business rule; render `data_field_mappings` "
+    "into §9 Data-Model Mapping (author the TARGET side per the target stack). When a "
+    "rule's `source` cites a file, READ it and inline the real values (thresholds, enum "
+    "lists, rounding modes, SQL predicates) VERBATIM with file:line — do NOT paraphrase."
+)
+
+#: Directive when NO slice AND NO component facts exist for a context — the harness must
+#: open the cited source itself rather than enumerate from a phantom slice (#1660).
+_NO_SLICE_READ_SOURCE_DIRECTIVE = (
+    "\n\nNo pre-extracted fact slice is attached for this context. Do NOT claim a slice "
+    "exists. Instead READ the source files under the components' `code_root` (the "
+    "handlers/procedures/classes this context owns) and ENUMERATE one R- per distinct "
+    "business rule you find there, each cited `file:line`. Prefer real values (thresholds, "
+    "enum lists, rounding modes, SQL predicates) inlined verbatim over prose summaries."
+)
+
+
+def _route_component_facts(
+    components: list[str],
+    component_facts: dict[str, dict[str, list[dict[str, Any]]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Union this spec's components' facts (#1660/#1659).
+
+    Returns ``(business_rules, data_field_mappings)`` — the concatenation across every
+    component id in *components* that has facts, de-duplicated by ``rule`` /
+    ``legacy`` so a rule/column shared by two components isn't listed twice.
+    """
+    rules: list[dict[str, Any]] = []
+    mappings: list[dict[str, Any]] = []
+    seen_rules: set[str] = set()
+    seen_maps: set[str] = set()
+    for cid in components:
+        entry = component_facts.get(cid)
+        if not entry:
+            continue
+        for br in entry.get("business_rules", []):
+            key = str(br.get("rule") or "")
+            if key and key not in seen_rules:
+                seen_rules.add(key)
+                rules.append(br)
+        for dm in entry.get("data_field_mappings", []):
+            key = str(dm.get("legacy") or "")
+            if key and key not in seen_maps:
+                seen_maps.add(key)
+                mappings.append(dm)
+    return rules, mappings
+
 
 def _slice_payload(slice_report: FunctionalMapReport) -> dict[str, Any]:
     """Compact, JSON-serializable view of a per-context slice for a prompt item (SP-D).
@@ -1847,6 +1954,7 @@ def build_synthesis_prompts(
     runtime_slices: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
     target: TargetStack | None = None,
     hla: HlaSource | None = None,
+    component_facts: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the ``synthesis_prompts.json`` payload (one item per skeleton).
 
@@ -1922,6 +2030,22 @@ def build_synthesis_prompts(
             # Track D (#1426): with a slice present, the harness reads the cited
             # files for real filter/enum values inlined VERBATIM with file:line.
             item["instruction"] += _FIDELITY_READ_DIRECTIVE
+        # #1660/#1659: route the per-component fact slice (§8 business rules from the
+        # app-digest + M1 schema field-mappings) to this spec by its components — the
+        # grounding a NON-web tier needs, since its functional-map slice is empty.
+        spec_rules, spec_mappings = _route_component_facts(
+            sk.get("components") or [], component_facts or {}
+        )
+        if spec_rules:
+            item["business_rules"] = spec_rules
+        if spec_mappings:
+            item["data_field_mappings"] = spec_mappings
+        # B.3 (#1660): only claim a "pre-extracted slice below" when facts were actually
+        # attached; otherwise tell the harness to READ the cited source (no phantom slice).
+        if slice_report is not None or spec_rules or spec_mappings:
+            item["instruction"] += _COMPONENT_FACTS_DIRECTIVE
+        else:
+            item["instruction"] += _NO_SLICE_READ_SOURCE_DIRECTIVE
         if frs:
             item["functional_requirements"] = frs
         # SP-G (#1387): thread this context's legacy tests as parity oracles.
@@ -3043,6 +3167,73 @@ def load_hla(
     return HlaSource.model_validate(obj)
 
 
+def _collect_component_facts(
+    context_root: Path,
+    artifacts: DiscoveredArtifacts,
+    repo_set: RepoSet | None,
+    system_map: SystemMap,
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Build ``{component_id → {business_rules, data_field_mappings}}`` (#1660/#1659).
+
+    For each system-map node, collect the real facts a spec should enumerate — so a
+    NON-web tier (batch/DB, whose functional-map slice is empty) still gets grounded
+    content:
+
+    * an ``#app`` / ``#ui`` / ``#api`` node → the §8 business rules from its
+      ``app-digest.json`` (``business_rules``, threaded by the aggregator from the
+      playbook, #1660);
+    * a ``#db`` node → the M1 schema field-mappings (``extract_data_field_mappings``,
+      #1659) for the tables it exposes.
+
+    Keyed by the node id (``<code_root>#<layer>``) — the SAME id a spec skeleton lists
+    in its ``components`` — so ``build_synthesis_prompts`` routes the union to each spec.
+    Best-effort + tolerant: a missing/unreadable artifact yields no facts for that node
+    (the spec's fact slice is simply thinner), never an error.
+    """
+    facts: dict[str, dict[str, list[dict[str, Any]]]] = {}
+
+    def _load_json(path: Path | None) -> dict[str, Any]:
+        if path is None or not path.is_file():
+            return {}
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return obj if isinstance(obj, dict) else {}
+
+    # Resolve each component's app-digest / schema path. Multi-repo keys by repo-dir
+    # basename under modernization/<repo>/; single-repo uses the discovered artifacts.
+    def _app_digest_for(node_id: str) -> dict[str, Any]:
+        base = node_id.rsplit("#", 1)[0]
+        if repo_set is not None and repo_set.entries:
+            return _load_json(_repo_artifact(context_root, Path(base).name, "app-digest.json"))
+        return _load_json(artifacts.app_digest)
+
+    def _schema_for(node_id: str) -> dict[str, Any]:
+        base = node_id.rsplit("#", 1)[0]
+        if repo_set is not None and repo_set.entries:
+            per_repo = _repo_artifact(context_root, Path(base).name, "schema.json")
+            if per_repo is not None:
+                return _load_json(per_repo)
+            return _load_json(context_root / "db" / "schema.json")
+        return _load_json(artifacts.schema)
+
+    for node in system_map.nodes:
+        layer = node.id.rsplit("#", 1)[-1] if "#" in node.id else ""
+        entry: dict[str, list[dict[str, Any]]] = {}
+        if layer in ("app", "ui", "api"):
+            rules = _app_digest_for(node.id).get("business_rules") or []
+            if isinstance(rules, list) and rules:
+                entry["business_rules"] = [r for r in rules if isinstance(r, dict)]
+        if layer == "db":
+            mappings = extract_data_field_mappings(_schema_for(node.id))
+            if mappings:
+                entry["data_field_mappings"] = mappings
+        if entry:
+            facts[node.id] = entry
+    return facts
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -3437,6 +3628,11 @@ def run(  # noqa: PLR0912, PLR0913, PLR0915 — the documented pipeline surface 
     resolved_test_inventory = test_inventory or _first_test_inventory(context_root)
     extract_oracles = build_parity_oracles(resolved_test_inventory, system_map)
     extract_runtime = build_runtime_slices(context_root, system_map, output_dir)
+    # #1660 + #1659: for a non-web tier the functional-map slice is empty, so thread
+    # the per-component §8 business rules (from each component's app-digest) AND the M1
+    # schema field-mappings (routed per bounded context) as a FACT slice so the harness
+    # has real facts to enumerate. Keyed by system-map node id → the spec's `components`.
+    component_facts = _collect_component_facts(context_root, artifacts, repo_set, system_map)
     prompts = build_synthesis_prompts(
         system_map,
         spec_skeletons,
@@ -3447,6 +3643,7 @@ def run(  # noqa: PLR0912, PLR0913, PLR0915 — the documented pipeline surface 
         runtime_slices=extract_runtime,
         target=target,
         hla=hla,
+        component_facts=component_facts,
     )
     prompts_path = _write_state(run_dir, system_map, prompts)
     # MR4 (#1553): persist migration-states.json (deterministic bands + unverified

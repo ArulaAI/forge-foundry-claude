@@ -265,6 +265,10 @@ def analyze(
     return AnalysisDigest(
         code_root=str(code_root),
         mainframe_flavor=mainframe_flavor,
+        # Persist the real resolved flavor (open string) so the continue leg reports
+        # the SAME flavor the extract leg detected, not the mainframe Literal default
+        # (#1650). resolved_flavor was computed above (line ~209).
+        resolved_flavor=resolved_flavor,
         execution_units=acc.execution_units,
         shared_components=acc.shared_components,
         entry_points=acc.entry_points,

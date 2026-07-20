@@ -65,8 +65,10 @@ _AUTO_DIALECTS: tuple[str, ...] = ("oracle", "tsql", "db2")
 #   CREATE OR REPLACE PROCEDURE ...
 #   CREATE OR ALTER PROCEDURE ...   (T-SQL)
 #   CREATE FUNCTION ... / CREATE TRIGGER ... (same modifiers)
+#   CREATE PACKAGE ... / CREATE PACKAGE BODY ...  (Oracle — #1646)
 _SP_HEADER_RE = re.compile(
-    r"^\s*CREATE\s+(?:OR\s+(?:REPLACE|ALTER)\s+)?(PROCEDURE|FUNCTION|TRIGGER)\b",
+    r"^\s*CREATE\s+(?:OR\s+(?:REPLACE|ALTER)\s+)?"
+    r"(PACKAGE\s+BODY|PACKAGE|PROCEDURE|FUNCTION|TRIGGER)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -77,7 +79,7 @@ _SP_HEADER_RE = re.compile(
 # inside identifiers (DB2 / Oracle allow it).
 _SP_NAME_RE = re.compile(
     r"^\s*CREATE\s+(?:OR\s+(?:REPLACE|ALTER)\s+)?"
-    r"(?P<kind>PROCEDURE|FUNCTION|TRIGGER)\s+"
+    r"(?P<kind>PACKAGE\s+BODY|PACKAGE|PROCEDURE|FUNCTION|TRIGGER)\s+"
     r"(?:(?P<schema>[A-Za-z_$][A-Za-z0-9_$]*)\s*\.\s*)?"
     r"(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)",
     re.IGNORECASE,
@@ -107,7 +109,9 @@ _RECOVERABLE_STMT_RE = re.compile(
     re.IGNORECASE,
 )
 
-SPKind = Literal["PROCEDURE", "FUNCTION", "TRIGGER"]
+SPKind = Literal["PROCEDURE", "FUNCTION", "TRIGGER", "PACKAGE", "PACKAGE BODY"]
+#: All valid SPKind values — the runtime exhaustiveness guard for the narrow Literal.
+_SP_KINDS: tuple[str, ...] = ("PROCEDURE", "FUNCTION", "TRIGGER", "PACKAGE", "PACKAGE BODY")
 ParseStatus = Literal["parsed", "unparseable"]
 
 
@@ -499,9 +503,10 @@ def _extract_header_metadata(chunk: str) -> tuple[str, str | None, SPKind]:
         # header regex family — but guard anyway so the dataclass always
         # has a non-empty name.
         return "<unknown>", None, "PROCEDURE"
-    kind_str = match.group("kind").upper()
+    # Normalize internal whitespace so "PACKAGE   BODY" → "PACKAGE BODY" (#1646).
+    kind_str = " ".join(match.group("kind").upper().split())
     # cast back to the Literal narrow type
-    if kind_str not in ("PROCEDURE", "FUNCTION", "TRIGGER"):  # pragma: no cover
+    if kind_str not in _SP_KINDS:  # pragma: no cover
         kind_str = "PROCEDURE"
     kind: SPKind = kind_str  # type: ignore[assignment]
     return match.group("name"), match.group("schema"), kind

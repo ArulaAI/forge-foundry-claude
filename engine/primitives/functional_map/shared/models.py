@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -266,6 +267,71 @@ class FunctionalDigest(_Frozen):
 
     def role_names(self) -> list[str]:
         return sorted({r.name for r in self.roles})
+
+
+def _relativize_path(value: str, code_root: Path) -> str:
+    """Rewrite an absolute source-file path to one relative to *code_root*.
+
+    Extraction walks *code_root* with absolute :class:`~pathlib.Path` objects, so
+    every ``file`` citation is stored absolute (e.g. ``/Users/rob/app/X.java``).
+    The continue-leg refcheck rejects any absolute ref as ``path_traversal``
+    (a leading ``/`` fails the ``..``-before-``resolve`` containment guard), so a
+    functional-map.json full of absolute citations fails its OWN validator
+    (exit 6). Normalizing them to repo-relative at extraction time makes the
+    artifact portable and refcheck-clean (#1639).
+
+    * An empty string is returned unchanged (a citation with no file).
+    * An already-relative path is returned unchanged (idempotent — a second pass,
+      or a sub-extractor that emitted a relative path, is a no-op).
+    * A path outside *code_root* (no common prefix) is returned unchanged rather
+      than fabricated into a ``../..`` escape — the refcheck will still flag it,
+      surfacing a genuine out-of-tree citation instead of hiding it.
+
+    Tries *code_root* both as-given and ``.resolve()``-d: extraction builds paths
+    by literally joining ``code_root / child`` (``rglob`` does not resolve), so the
+    raw form is the exact inverse; the resolved form is the fallback when the walked
+    paths were themselves resolved or when *code_root* carried a ``..``/symlink.
+    """
+    if not value:
+        return value
+    p = Path(value)
+    if not p.is_absolute():
+        return value
+    for root in (code_root, code_root.resolve()):
+        try:
+            return p.relative_to(root).as_posix()
+        except ValueError:
+            continue
+    # Not under code_root (either form) — leave as-is; do NOT synthesize a `../` escape.
+    return value
+
+
+def relativize_digest(digest: FunctionalDigest, code_root: Path) -> FunctionalDigest:
+    """Return *digest* with every ``file`` citation rewritten repo-relative (#1639).
+
+    Covers every model that carries a source-file path: ``endpoints``, ``guards``,
+    and ``nav_edges`` (the digest's own citations). Downstream ``file:line``
+    derivations — synthesis-authored ``FlowStep.file`` (fed the endpoint's file via
+    the synthesis prompts) and ``BusinessRule.enforced_at`` (derived from endpoint /
+    flow-step locations in :func:`thread_business_rules`) — inherit the relative
+    form automatically because they read from these already-normalized endpoints.
+
+    Pure and deterministic. Idempotent (re-running on an already-relative digest is
+    a no-op), so calling it once after ``extract()`` is sufficient and safe.
+    """
+    endpoints = tuple(
+        ep.model_copy(update={"file": _relativize_path(ep.file, code_root)})
+        for ep in digest.endpoints
+    )
+    guards = tuple(
+        g.model_copy(update={"file": _relativize_path(g.file, code_root)}) for g in digest.guards
+    )
+    nav_edges = tuple(
+        n.model_copy(update={"file": _relativize_path(n.file, code_root)}) for n in digest.nav_edges
+    )
+    return digest.model_copy(
+        update={"endpoints": endpoints, "guards": guards, "nav_edges": nav_edges}
+    )
 
 
 class FunctionalMapReport(_Frozen):

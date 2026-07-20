@@ -54,11 +54,19 @@ from primitives.runtime_explore.shared.browser import (
     CAPABILITY_UNAVAILABLE_EXIT,
     playwright_available,
 )
-from primitives.runtime_explore.shared.models import CrawlGraph, Form, FormField, Screen
+from primitives.runtime_explore.shared.models import (
+    Control,
+    CrawlGraph,
+    Form,
+    FormField,
+    Screen,
+)
 from primitives.runtime_explore.shared.plan import PlanError, load_plan, url_in_scope
 from primitives.runtime_explore.shared.screenshots import screenshot_name
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Sequence
+
     from primitives.runtime_explore.shared.plan import ExplorePlan
 
 _STORAGE = "step_storage_state.json"
@@ -298,6 +306,66 @@ def _capture_labeled_screenshot(
         return f"screenshots/{shot.name}"
     except Exception:  # noqa: BLE001 - best-effort, matches the crawler
         return ""
+
+
+def _persist_controls_to_graph(state_dir: Path, url: str, controls: Sequence[Control]) -> None:
+    """Merge detected/exercised *controls* onto the matching ``Screen.controls[]`` in
+    crawl-graph.json, keyed by *url* (#1623).
+
+    ``controls detect`` / ``controls auto-exercise`` print their inventory to stdout,
+    but the Phase-C ``journey_aggregator`` reads controls from the crawl graph — so
+    without this write-back the aggregator sees **0 controls** and the #1596 control
+    sweep silently produces nothing. This persists them so the documented path works
+    without a manual hand-merge.
+
+    * Merges by control ``selector`` (a re-run of ``detect`` on the same screen
+      updates in place rather than duplicating; an ``auto-exercise`` record — which
+      carries the before/after ``data_state_change`` + screenshot — supersedes the
+      bare ``detected_only`` record for the same selector).
+    * No matching ``Screen`` for *url* (e.g. the crawler never recorded it) → a
+      minimal ``agent``-reached screen is created so the controls are not lost.
+    * No graph file yet → no-op (nothing to attach to; the SKILL always crawls first).
+    * Empty *controls* → no-op (never rewrites the graph for nothing).
+    """
+    if not controls:
+        return
+    graph_path = state_dir / "crawl-graph.json"
+    if not graph_path.is_file():
+        return
+    graph = CrawlGraph.model_validate(json.loads(graph_path.read_text(encoding="utf-8")))
+    screens = list(graph.screens)
+    idx = next((i for i, s in enumerate(screens) if s.url == url), None)
+    if idx is None:
+        sid = f"AGT-{len(screens) + 1:03d}"
+        merged = _merge_controls((), controls)
+        screens.append(Screen(id=sid, url=url, reached_via="agent", controls=merged))
+    else:
+        target = screens[idx]
+        merged = _merge_controls(target.controls, controls)
+        screens[idx] = target.model_copy(update={"controls": merged})
+    updated = graph.model_copy(update={"screens": tuple(screens)})
+    _atomic_write(
+        graph_path,
+        json.dumps(updated.model_dump(mode="json", by_alias=True), indent=2) + "\n",
+    )
+
+
+def _merge_controls(
+    existing: Sequence[Control], incoming: Sequence[Control]
+) -> tuple[Control, ...]:
+    """Merge *incoming* controls into *existing*, keyed by ``selector`` (last wins).
+
+    An incoming record for a selector already present replaces it (so an
+    auto-exercise result with a real ``data_state_change`` supersedes the earlier
+    ``detected_only`` detection); a new selector is appended in first-seen order.
+    """
+    by_selector: dict[str, Control] = {c.selector: c for c in existing}
+    order: list[str] = [c.selector for c in existing]
+    for c in incoming:
+        if c.selector not in by_selector:
+            order.append(c.selector)
+        by_selector[c.selector] = c
+    return tuple(by_selector[sel] for sel in order)
 
 
 def _append_agent_screen(
@@ -660,7 +728,99 @@ def _auto_exercise_controls(state_dir: Path, out_dir: Path, page: Any, plan: Exp
             )
         )
 
+    # #1623: persist onto the graph's Screen.controls[] so the Phase-C aggregator
+    # reads them. Record the WHOLE detected set — the exercised (sort/dropdown) records
+    # with their before/after delta, plus every other detected control as
+    # ``detected_only`` — so the #1596 "every detected control is recorded" invariant
+    # holds without a manual merge (exercised records supersede by selector).
+    _persist_controls_to_graph(state_dir, url, [*controls_found, *exercised])
+
     print(json.dumps([c.model_dump(mode="json") for c in exercised], indent=2))
+
+
+def _form_scoped_submit(page: Any, selector: str) -> None:
+    """Click *selector*, preferring a match inside a ``<form>`` that has a password field.
+
+    A generic ``button[type=submit]`` selector matches EVERY submit button on the page —
+    on a login page that also renders a header search form, the page-wide first match is
+    often the search button, so "submit login" silently submits a search (#1624a). This
+    scopes the click: if any ``<form>`` containing a ``input[type=password]`` also contains
+    a match for *selector*, click THAT match; otherwise fall back to the plain first match
+    (byte-identical to the pre-fix behavior for non-login forms).
+    """
+    scoped = page.locator(
+        f"form:has(input[type=password]) :is({selector}), form:has(input[type=password]){selector}"
+    )
+    try:
+        if scoped.count() > 0:
+            scoped.first.click()
+            return
+    except Exception:  # noqa: BLE001, S110 - a malformed :is()/selector falls back to the raw click
+        pass
+    page.click(selector)
+
+
+def _do_login(page: Any, args: argparse.Namespace, plan: ExplorePlan) -> int:
+    """Fill the login fields AND submit within ONE browser-context/page lifetime (#1622).
+
+    The documented ``fill username`` → ``fill password`` → ``submit`` step sequence CANNOT
+    complete a CSRF-protected multi-field form: each step_cli invocation launches a fresh
+    context and re-``goto``s the page before its verb, wiping the fields a prior invocation
+    filled and rotating the per-render CSRF token. This single verb navigates to the login
+    URL, fills both fields, and submits — all in one page lifetime — so the hidden CSRF
+    token and both field values survive to submission.
+
+    Selectors: explicit ``--username-selector``/``--password-selector``/``--submit-selector``
+    win; otherwise they resolve from the named ``--profile`` (a profiles plan). The
+    login URL is ``--login-url`` if given, else the profile's / plan's ``login_url``, else
+    the current page. The submit is **form-scoped** (:func:`_form_scoped_submit`) so it
+    can't hit a header search form (#1624a). A post-login redirect off the URL scope is a
+    clean exit 3.
+    """
+    username_selector = args.username_selector
+    password_selector = args.password_selector
+    submit_selector = args.submit_selector
+    login_url = args.login_url
+
+    # Fill any unset selectors from the named profile (profiles plans).
+    if (username_selector is None or password_selector is None) and (
+        plan.auth is not None and plan.auth.profiles
+    ):
+        u, p, sub, prof_login_url = _resolve_login_selectors(plan, getattr(args, "profile", None))
+        username_selector = username_selector or u
+        password_selector = password_selector or p
+        submit_selector = submit_selector or sub
+        login_url = login_url or prof_login_url
+
+    if not username_selector or not password_selector:
+        print(
+            "ERROR: login needs --username-selector and --password-selector "
+            "(or a --profile that declares them)"
+        )
+        return 3
+
+    if login_url:
+        if not url_in_scope(login_url.split("#", 1)[0], plan.url_scope):
+            print(f"ERROR: login_url {login_url} is off-scope (exit 3)")
+            return 3
+        page.goto(login_url, wait_until=plan.budget.wait_until, timeout=plan.budget.page_timeout_ms)
+
+    # One page lifetime: fill both fields, then submit — no intermediate goto/reload, so
+    # the CSRF token and filled values survive.
+    page.locator(username_selector).first.fill(args.username)
+    page.locator(password_selector).first.fill(args.password)
+    if submit_selector:
+        _form_scoped_submit(page, submit_selector)
+    else:
+        # No submit selector — submit the form that holds the password field.
+        page.locator(password_selector).first.press("Enter")
+    page.wait_for_load_state(plan.budget.wait_until)
+
+    landed = page.url.split("#", 1)[0]
+    if not url_in_scope(landed, plan.url_scope):
+        print(f"ERROR: post-login redirect off-scope to {landed} (exit 3)")
+        return 3
+    return 0
 
 
 def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:  # noqa: PLR0912
@@ -704,11 +864,14 @@ def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:  #
             )
             page = context.new_page()
             # Restore the session's current URL — but scope-check it first (defense in
-            # depth: a stale/tampered marker must not pivot the browser off-scope).
+            # depth: a stale/tampered marker must not pivot the browser off-scope). The
+            # ``login`` verb manages its own navigation (goto login_url then fill+submit in
+            # one page lifetime, #1622), so skip the restore-goto for it — an extra reload
+            # would rotate the CSRF token before the login even starts.
             current = marker.get("current_url") or plan.base_url
             if current and not url_in_scope(current.split("#", 1)[0], plan.url_scope):
                 current = plan.base_url
-            if current:
+            if current and verb != "login":
                 page.goto(
                     current,
                     wait_until=plan.budget.wait_until,
@@ -733,8 +896,12 @@ def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:  #
             elif verb == "click":
                 _resolve_locator(page, args.selector, args.by, args.nth).click()
             elif verb == "submit":
-                page.click(args.selector)
+                _form_scoped_submit(page, args.selector)
                 page.wait_for_load_state(plan.budget.wait_until)
+            elif verb == "login":
+                rc = _do_login(page, args, plan)
+                if rc != 0:
+                    return rc
             elif verb == "select":
                 # Option validated pre-launch; select_kwargs is guaranteed non-None here.
                 assert select_kwargs is not None
@@ -784,6 +951,9 @@ def _run_step(verb: str, args: argparse.Namespace, plan: ExplorePlan) -> int:  #
                 )
 
                 controls_found = detect_controls(page)
+                # #1623: persist onto the graph's Screen.controls[] (keyed by url) so
+                # the Phase-C aggregator picks them up — not just stdout.
+                _persist_controls_to_graph(state_dir, page.url.split("#", 1)[0], controls_found)
                 print(json.dumps([c.model_dump(mode="json") for c in controls_found], indent=2))
 
             elif verb == "controls" and args.action == "auto-exercise":
@@ -838,6 +1008,42 @@ def _build_parser() -> argparse.ArgumentParser:
     cl.add_argument("selector")
     sm = sub.add_parser("submit", parents=[common])
     sm.add_argument("selector")
+    # login — fill BOTH fields + submit in ONE browser/page lifetime so a CSRF-protected
+    # multi-field form survives to submission (#1622). Composes with `creds`:
+    #   step_cli login "$(step_cli creds user …)" "$(step_cli creds pass …)" \
+    #     --profile realm_a --plan … --state-dir …
+    lg = sub.add_parser("login", parents=[common])
+    lg.add_argument("username", help="the username value (e.g. from `step_cli creds user …`)")
+    lg.add_argument("password", help="the password value (e.g. from `step_cli creds pass …`)")
+    lg.add_argument(
+        "--username-selector",
+        dest="username_selector",
+        default=None,
+        help="username field selector (defaults to the --profile's declared selector)",
+    )
+    lg.add_argument(
+        "--password-selector",
+        dest="password_selector",
+        default=None,
+        help="password field selector (defaults to the --profile's declared selector)",
+    )
+    lg.add_argument(
+        "--submit-selector",
+        dest="submit_selector",
+        default=None,
+        help="submit selector (form-scoped, #1624a); omitted → press Enter in the password field",
+    )
+    lg.add_argument(
+        "--login-url",
+        dest="login_url",
+        default=None,
+        help="URL to navigate to before filling (defaults to the --profile's / plan's login_url)",
+    )
+    lg.add_argument(
+        "--profile",
+        default=None,
+        help="named login profile whose selectors + login_url to use (multi-realm plans)",
+    )
     # select — pick a <select> option by exactly one of value/label/index (#1531).
     sel = sub.add_parser("select", parents=[common])
     sel.add_argument("selector")

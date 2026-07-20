@@ -156,8 +156,11 @@ def parse_repo_override(value: str) -> tuple[str, str]:
     """SEC-8 parse+validate one ``--repo role=path`` token.
 
     Splits on the FIRST ``=``. Validates role ∈ {ui,api,db,iac} and that the
-    path does not start with ``-`` (flag injection) or contain a ``..`` segment
-    (path traversal, checked on the raw value). Raises click.BadParameter.
+    path does not start with ``-`` (flag injection, checked on the raw value).
+    A ``..`` is NOT rejected here — a ``../sibling`` repo is the idiomatic
+    multi-repo layout; traversal is bounded later by trusted-root containment in
+    ``repos._validate_repo_dir`` (which has the ``project_root`` this parse step
+    lacks), #1665. Raises click.BadParameter.
     """
     if "=" not in value:
         raise click.BadParameter(f"Expected role=path, got {value!r}")
@@ -166,9 +169,6 @@ def parse_repo_override(value: str) -> tuple[str, str]:
         raise click.BadParameter(f"role must be one of {sorted(_VALID_REPO_ROLES)}, got {role!r}")
     if path.startswith("-"):
         raise click.BadParameter(f"path must not start with '-': {path!r}")
-    parts = path.replace("\\", "/").split("/")
-    if ".." in parts:
-        raise click.BadParameter(f"path must not contain '..' segment: {path!r}")
     return role, path
 
 

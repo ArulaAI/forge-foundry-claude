@@ -143,6 +143,40 @@ def _screen_ifaces(screen: Screen, context_path: str) -> set[str]:
     return {http_iface("GET", templatize(c)) for c in candidates}
 
 
+#: The per-role out-slice prefix the SKILL crawls each role into (`roles/<role>/`), relative
+#: to the aggregator's top-level `--out`. Screenshot refs are stored slice-relative
+#: (`screenshots/…`); the merge rewrites them to `roles/<role>/screenshots/…` (#1624b).
+_ROLE_SLICE = "roles"
+
+
+def _prefix_role_screenshot(ref: str, role: str) -> str:
+    """Prefix a slice-relative ``screenshots/…`` *ref* with its role slice (#1624b).
+
+    Idempotent + conservative: only a ref that starts with ``screenshots/`` is rewritten
+    (an empty ref, an absolute path, or an already-prefixed ``roles/…`` ref is returned
+    unchanged), so re-merging or a non-standard layout never double-prefixes.
+    """
+    if ref.startswith("screenshots/"):
+        return f"{_ROLE_SLICE}/{role}/{ref}"
+    return ref
+
+
+def _prefix_screenshots(screen: Screen, *, role: str, roles: tuple[str, ...]) -> Screen:
+    """Return *screen* with its (and its controls') screenshot refs role-prefixed +
+    its ``roles`` tuple set (#1624b / #1563)."""
+    controls = tuple(
+        c.model_copy(update={"screenshot": _prefix_role_screenshot(c.screenshot, role)})
+        for c in screen.controls
+    )
+    return screen.model_copy(
+        update={
+            "roles": roles,
+            "screenshot": _prefix_role_screenshot(screen.screenshot, role),
+            "controls": controls,
+        }
+    )
+
+
 def merge_role_graphs(role_graphs: dict[str, CrawlGraph]) -> tuple[CrawlGraph, dict[str, int]]:
     """Merge N per-role crawl graphs into one role-tagged graph (#1563).
 
@@ -174,8 +208,19 @@ def merge_role_graphs(role_graphs: dict[str, CrawlGraph]) -> tuple[CrawlGraph, d
                 order.append(screen.url)
             roles_by_url[screen.url].add(role)
 
+    # #1624b: each role crawls into its OWN out slice (`roles/<role>/screenshots/…` per the
+    # SKILL convention), but stores its screenshot ref as the slice-relative `screenshots/…`.
+    # The merged MD is written at the top-level `--out`, so those refs resolve to a
+    # non-existent top-level `screenshots/…` and every link breaks. Prefix each screen's
+    # (and its controls') ref with its owning role's slice so the links resolve from the
+    # aggregator's `--out`. The owning role is the FIRST (sorted) role that reached the URL
+    # — the same one whose crawl produced the id/screenshot (see the docstring).
     merged_screens = tuple(
-        merged_by_url[url].model_copy(update={"roles": tuple(sorted(roles_by_url[url]))})
+        _prefix_screenshots(
+            merged_by_url[url],
+            role=sorted(roles_by_url[url])[0],
+            roles=tuple(sorted(roles_by_url[url])),
+        )
         for url in order
     )
 
